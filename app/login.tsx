@@ -5,7 +5,7 @@ import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Check, Eye, EyeOff } from 'lucide-react-native';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
@@ -111,7 +111,7 @@ export default function LoginScreen() {
 
                         {/* Form */}
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>CORREO ELECTRÓNICO</Text>
+                            <Text style={styles.label}>NOMBRE DE USUARIO O CORREO ELECTRÓNICO</Text>
                             <TextInput
                                 style={styles.input}
                                 placeholder=""

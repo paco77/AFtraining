@@ -1,4 +1,5 @@
 import { Colors, Spacing } from '@/constants/theme';
+import { useNutrition } from '@/context/NutritionContext';
 import { usePlans } from '@/context/PlanContext';
 import { useUser } from '@/context/UserContext';
 import api from '@/services/api';
@@ -9,9 +10,11 @@ import {
     ChevronDown,
     ChevronUp,
     Dumbbell,
+    Edit,
     Ruler,
     Scale,
     Target,
+    Trash2,
     Trophy,
     User,
     Zap
@@ -37,6 +40,7 @@ export default function ClientDetails() {
     const [history, setHistory] = useState<any[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
+    const [expandedNutritionPlan, setExpandedNutritionPlan] = useState<string | null>(null);
 
     const client = useMemo(() => clients.find(c => c.id === id), [clients, id]);
 
@@ -44,6 +48,13 @@ export default function ClientDetails() {
         if (!client) return [];
         return plans.filter(p => String(p.assignedClientId) === String(client.id));
     }, [plans, client?.id]);
+
+    const { plans: nutritionPlans, deletePlan } = useNutrition();
+
+    const clientNutritionPlans = useMemo(() => {
+        if (!client) return [];
+        return nutritionPlans.filter(p => String(p.client_id) === String(client.id));
+    }, [nutritionPlans, client?.id]);
 
     const [progressHistory, setProgressHistory] = useState<any[]>([]);
     const [loadingProgress, setLoadingProgress] = useState(true);
@@ -95,6 +106,27 @@ export default function ClientDetails() {
         } finally {
             setLoadingProgress(false);
         }
+    };
+
+    const handleDeleteNutritionPlan = (planId: string | number) => {
+        Alert.alert(
+            'Eliminar Plan',
+            '¿Estás seguro de que deseas eliminar este plan de alimentación? Esta acción no se puede deshacer.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await deletePlan(planId);
+                        } catch (error) {
+                            // Error handled by context
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     if (!client) {
@@ -293,6 +325,96 @@ export default function ClientDetails() {
                         <View style={styles.cpEmpty}>
                             <CalendarDays size={24} color={Colors.textMuted} />
                             <Text style={styles.cpEmptyText}>No hay planes asignados</Text>
+                        </View>
+                    )}
+                </View>
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Planes de Alimentación</Text>
+                    {clientNutritionPlans.length > 0 ? clientNutritionPlans.map(plan => {
+                        const totalMeals = plan.meals?.length || 0;
+                        const dateText = plan.created_at ? new Date(plan.created_at).toLocaleDateString() : '';
+                        const isExpanded = expandedNutritionPlan === plan.id;
+                        return (
+                            <View key={plan.id} style={styles.cpCard}>
+                                <TouchableOpacity
+                                    style={styles.cpHeader}
+                                    onPress={() => setExpandedNutritionPlan(isExpanded ? null : plan.id)}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.cpIconBg}>
+                                        <CalendarDays size={20} color={Colors.primary} />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.cpTitle}>Plan {dateText}</Text>
+                                        <Text style={styles.cpSub}>{totalMeals} tiempos de comida</Text>
+                                        {plan.tdee || plan.target_calories ? (
+                                            <Text style={[styles.cpSub, { color: Colors.text }]}>
+                                                Gasto cal total: {plan.tdee || '--'} kcal | Objetivo: {plan.target_calories || '--'} kcal
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <View style={styles.cpStatRow}>
+                                        <Text style={styles.cpStatText}>{plan.total_calories} kcal</Text>
+                                    </View>
+
+                                    <View style={{ flexDirection: 'row', gap: 12, marginRight: 8 }}>
+                                        <TouchableOpacity
+                                            onPress={() => router.push({ pathname: '/client/nutrition/[id]', params: { id: client.id, planId: plan.id } } as any)}
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        >
+                                            <Edit size={18} color={Colors.textMuted} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleDeleteNutritionPlan(plan.id)}
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        >
+                                            <Trash2 size={18} color={Colors.danger} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {isExpanded ? <ChevronUp size={20} color={Colors.textMuted} /> : <ChevronDown size={20} color={Colors.textMuted} />}
+                                </TouchableOpacity>
+
+                                {isExpanded && (
+                                    <View style={styles.cpDaysList}>
+                                        {(plan.gender || plan.weight || plan.objective) && (
+                                            <View style={styles.planDetailsContainer}>
+                                                <Text style={styles.planDetailsTitle}>Detalles del Cálculo:</Text>
+                                                <View style={styles.planDetailsGrid}>
+                                                    {plan.gender && <Text style={styles.planDetailText}>• Género: {plan.gender}</Text>}
+                                                    {plan.age && <Text style={styles.planDetailText}>• Edad: {plan.age} años</Text>}
+                                                    {plan.weight && <Text style={styles.planDetailText}>• Peso: {plan.weight} kg</Text>}
+                                                    {plan.height && <Text style={styles.planDetailText}>• Altura: {plan.height} cm</Text>}
+                                                    {plan.activity_level && <Text style={styles.planDetailText}>• Nivel Actividad: {plan.activity_level}</Text>}
+                                                    {plan.formula && <Text style={styles.planDetailText}>• Fórmula: {plan.formula === 'mifflin' ? 'Mifflin-St Jeor' : plan.formula === 'harris' ? 'Harris-Benedict' : 'Tinsley'}</Text>}
+                                                    {plan.objective && <Text style={styles.planDetailText}>• Objetivo: {plan.objective}</Text>}
+                                                    {plan.caloric_adjustment != null && <Text style={styles.planDetailText}>• Ajuste Calórico: {plan.caloric_adjustment} kcal</Text>}
+                                                </View>
+                                            </View>
+                                        )}
+
+                                        {plan.meals?.map((meal: any, index: number) => (
+                                            <View key={meal.id || index} style={styles.cpDayRow}>
+                                                <Text style={styles.cpDayLabel}>{meal.name}</Text>
+                                                {meal.foods && meal.foods.length > 0 && (
+                                                    <View style={styles.cpDayExercises}>
+                                                        {meal.foods.map((food: any, idx: number) => (
+                                                            <Text key={food.id || idx} style={styles.cpExTextWhite} numberOfLines={1}>
+                                                                {idx + 1}. {food.name} · {food.serving_size} {food.serving_unit}
+                                                            </Text>
+                                                        ))}
+                                                    </View>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+                        );
+                    }) : (
+                        <View style={styles.cpEmpty}>
+                            <CalendarDays size={24} color={Colors.textMuted} />
+                            <Text style={styles.cpEmptyText}>No hay planes de alimentación asignados</Text>
                         </View>
                     )}
                 </View>
@@ -746,6 +868,34 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: Colors.textMuted,
         marginBottom: 2,
+    },
+    cpExTextWhite: {
+        fontSize: 13,
+        color: '#FFFFFF',
+        marginBottom: 4,
+        fontWeight: '500',
+    },
+    planDetailsContainer: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 16,
+    },
+    planDetailsTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: Colors.text,
+        marginBottom: 8,
+    },
+    planDetailsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    planDetailText: {
+        fontSize: 12,
+        color: Colors.textMuted,
+        width: '48%',
     },
     cpEmpty: {
         backgroundColor: Colors.surface,

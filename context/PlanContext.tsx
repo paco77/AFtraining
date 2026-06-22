@@ -1,5 +1,6 @@
 import { Exercise } from '@/constants/ExerciseData';
-import { DayLog, MonthlyPlan, MONTHS } from '@/constants/PlanTypes';
+import { DayLog, MonthlyPlan, MONTHS, SetLog } from '@/constants/PlanTypes';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { showToast } from '@/services/toast';
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
@@ -8,6 +9,7 @@ import { useUser } from './UserContext';
 
 // ─── Cache Config ─────────────────────────────────────────────────────────────
 const CACHE_SUBDIR = 'af_cache';
+const WORKOUT_SESSION_KEY = 'active_workout_session';
 
 interface PlanContextType {
     plans: MonthlyPlan[];
@@ -21,8 +23,16 @@ interface PlanContextType {
     addExercise: (exercise: Exercise) => Promise<Exercise | undefined>;
     // Session management
     activeSessionDay: number | null;
-    startWorkoutSession: (dayNumber: number) => void;
+    activePlanId: string | null;
+    sessionLogs: Record<string, SetLog[]>;
+    setSessionLogs: React.Dispatch<React.SetStateAction<Record<string, SetLog[]>>>;
+    completedSets: Record<string, boolean>;
+    setCompletedSets: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+    comment: string;
+    setComment: React.Dispatch<React.SetStateAction<string>>;
+    startWorkoutSession: (planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => void;
     finishWorkoutSession: () => void;
+    discardWorkoutSession: () => void;
     // Metadata
     allExercises: Exercise[];
     muscleGroups: string[];
@@ -39,8 +49,16 @@ const PlanContext = createContext<PlanContextType>({
     updatePlan: async () => { },
     fetchPlans: async () => { },
     activeSessionDay: null,
+    activePlanId: null,
+    sessionLogs: {},
+    setSessionLogs: () => { },
+    completedSets: {},
+    setCompletedSets: () => { },
+    comment: '',
+    setComment: () => { },
     startWorkoutSession: () => { },
     finishWorkoutSession: () => { },
+    discardWorkoutSession: () => { },
     allExercises: [],
     muscleGroups: [],
     refreshMetadata: async () => { },
@@ -362,15 +380,82 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const [activeSessionDay, setActiveSessionDay] = useState<number | null>(null);
+    const [activePlanId, setActivePlanId] = useState<string | null>(null);
+    const [sessionLogs, setSessionLogs] = useState<Record<string, SetLog[]>>({});
+    const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
+    const [comment, setComment] = useState('');
 
-    const startWorkoutSession = useCallback((dayNumber: number) => {
+    // Restore unfinished session on init
+    useEffect(() => {
+        const loadSession = async () => {
+            try {
+                const stored = await AsyncStorage.getItem(WORKOUT_SESSION_KEY);
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    setActivePlanId(parsed.planId);
+                    setActiveSessionDay(parsed.dayNumber);
+                    setSessionLogs(parsed.sessionLogs || {});
+                    setCompletedSets(parsed.completedSets || {});
+                    setComment(parsed.comment || '');
+                    
+                    import('react-native').then(({ Alert }) => {
+                        Alert.alert(
+                            'Sesión sin terminar',
+                            'Tienes una sesión de entrenamiento activa. Ve a la pestaña de entrenamiento para continuarla o descartarla.',
+                            [
+                                { text: 'Más tarde', style: 'cancel' }
+                            ]
+                        );
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load active session from AsyncStorage', e);
+            }
+        };
+        loadSession();
+    }, []);
+
+    // Save session automatically whenever state changes
+    useEffect(() => {
+        if (activeSessionDay !== null && activePlanId !== null) {
+            const dataToSave = {
+                planId: activePlanId,
+                dayNumber: activeSessionDay,
+                sessionLogs,
+                completedSets,
+                comment
+            };
+            AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(dataToSave)).catch(console.error);
+        }
+    }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment]);
+
+    const startWorkoutSession = useCallback((planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => {
+        setActivePlanId(planId);
         setActiveSessionDay(dayNumber);
+        setSessionLogs(initialLogs);
+        setCompletedSets({});
+        setComment('');
         showToast.info(`Sesión iniciada: Día ${dayNumber}`);
     }, []);
 
-    const finishWorkoutSession = useCallback(() => {
+    const finishWorkoutSession = useCallback(async () => {
         setActiveSessionDay(null);
+        setActivePlanId(null);
+        setSessionLogs({});
+        setCompletedSets({});
+        setComment('');
+        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
         showToast.success('Sesión finalizada');
+    }, []);
+
+    const discardWorkoutSession = useCallback(async () => {
+        setActiveSessionDay(null);
+        setActivePlanId(null);
+        setSessionLogs({});
+        setCompletedSets({});
+        setComment('');
+        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
+        showToast.info('Sesión descartada');
     }, []);
 
     return (
@@ -382,8 +467,16 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             saveLog,
             fetchHistory,
             activeSessionDay,
+            activePlanId,
+            sessionLogs,
+            setSessionLogs,
+            completedSets,
+            setCompletedSets,
+            comment,
+            setComment,
             startWorkoutSession,
             finishWorkoutSession,
+            discardWorkoutSession,
             allExercises,
             muscleGroups,
             refreshMetadata,

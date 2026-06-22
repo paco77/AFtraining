@@ -35,6 +35,8 @@ export interface NutritionPlan {
     client_id: string | null;
     name: string;
     description?: string;
+    tdee?: number;
+    target_calories?: number;
     total_calories: number;
     total_protein: number;
     total_carbs: number;

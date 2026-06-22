@@ -118,8 +118,8 @@ export const saveNutritionPlan = async (rawData: any) => {
             foods: meal.foods.map((food: any) => ({
                 fatsecret_food_id: String(food.id),
                 name: food.name,
-                serving_size: parseFloat(food.servingSize) || 1,
-                serving_unit: food.servingSize.replace(/[0-9.]/g, '').trim() || 'portion',
+                serving_size: food.amountText !== undefined ? (parseFloat(String(food.amountText).replace(',', '.')) || 1) : (parseFloat(food.servingSize) || 1),
+                serving_unit: food.unit || food.servingSize.replace(/[0-9.]/g, '').trim() || 'portion',
                 calories: food.calories * (food.amountMultiplier || 1),
                 protein: food.protein * (food.amountMultiplier || 1),
                 carbs: food.carbs * (food.amountMultiplier || 1),
@@ -129,8 +129,22 @@ export const saveNutritionPlan = async (rawData: any) => {
 
         const planData = {
             client_id: rawData.client_id,
-            name: `Plan Nutricional - ${rawData.date}`,
-            description: `Objetivo: ${rawData.objective} | Fórmula: ${rawData.formula} | Macros (%): P${(rawData.protein_grams * 4 / rawData.target_calories * 100).toFixed(0)} F${(rawData.lipid_grams * 9 / rawData.target_calories * 100).toFixed(0)} C${(rawData.carb_grams * 4 / rawData.target_calories * 100).toFixed(0)} | Calorías Objetivo: ${rawData.target_calories}kcal`,
+            name: rawData.name || `Plan Nutricional - ${rawData.date}`,
+            description: (rawData.description ? `${rawData.description}\n\n` : '') + `Objetivo: ${rawData.objective} | Fórmula: ${rawData.formula} | Macros (%): P${(rawData.protein_grams * 4 / rawData.target_calories * 100).toFixed(0)} F${(rawData.lipid_grams * 9 / rawData.target_calories * 100).toFixed(0)} C${(rawData.carb_grams * 4 / rawData.target_calories * 100).toFixed(0)} | Calorías Objetivo: ${rawData.target_calories}kcal`,
+            tdee: rawData.tdee,
+            target_calories: rawData.target_calories,
+            gender: rawData.gender,
+            weight: rawData.weight,
+            height: rawData.height,
+            age: rawData.age,
+            activity_level: rawData.activity_level,
+            formula: rawData.formula,
+            objective: rawData.objective,
+            caloric_adjustment: rawData.caloric_adjustment,
+            total_calories: rawData.target_calories,
+            total_protein: rawData.protein_grams,
+            total_carbs: rawData.carb_grams,
+            total_fat: rawData.lipid_grams,
             meals: formattedMeals
         };
 
@@ -138,6 +152,58 @@ export const saveNutritionPlan = async (rawData: any) => {
         return response.data;
     } catch (error) {
         console.error('Error saving nutrition plan:', error);
+        throw error;
+    }
+};
+
+export const updateNutritionPlan = async (id: string | number, rawData: any) => {
+    try {
+        let parsedMeals = [];
+        try {
+            parsedMeals = typeof rawData.meals_data === 'string' ? JSON.parse(rawData.meals_data) : rawData.meals_data;
+        } catch (e) {
+            console.error('Failed to parse meals_data', e);
+        }
+
+        const formattedMeals = parsedMeals.map((meal: any) => ({
+            name: meal.name,
+            foods: meal.foods.map((food: any) => ({
+                fatsecret_food_id: String(food.id),
+                name: food.name,
+                serving_size: food.amountText !== undefined ? (parseFloat(String(food.amountText).replace(',', '.')) || 1) : (parseFloat(food.servingSize) || 1),
+                serving_unit: food.unit || food.servingSize.replace(/[0-9.]/g, '').trim() || 'portion',
+                calories: food.calories * (food.amountMultiplier || 1),
+                protein: food.protein * (food.amountMultiplier || 1),
+                carbs: food.carbs * (food.amountMultiplier || 1),
+                fat: food.fat * (food.amountMultiplier || 1),
+            }))
+        }));
+
+        const planData = {
+            client_id: rawData.client_id,
+            name: rawData.name || `Plan Nutricional - ${rawData.date}`,
+            description: rawData.objective ? ((rawData.description ? `${rawData.description}\n\n` : '') + `Objetivo: ${rawData.objective} | Fórmula: ${rawData.formula} | Macros (%): P${(rawData.protein_grams * 4 / rawData.target_calories * 100).toFixed(0)} F${(rawData.lipid_grams * 9 / rawData.target_calories * 100).toFixed(0)} C${(rawData.carb_grams * 4 / rawData.target_calories * 100).toFixed(0)} | Calorías Objetivo: ${rawData.target_calories}kcal`) : rawData.description,
+            tdee: rawData.tdee,
+            target_calories: rawData.target_calories,
+            gender: rawData.gender,
+            weight: rawData.weight,
+            height: rawData.height,
+            age: rawData.age,
+            activity_level: rawData.activity_level,
+            formula: rawData.formula,
+            objective: rawData.objective,
+            caloric_adjustment: rawData.caloric_adjustment,
+            total_calories: rawData.target_calories,
+            total_protein: rawData.protein_grams,
+            total_carbs: rawData.carb_grams,
+            total_fat: rawData.lipid_grams,
+            meals: formattedMeals
+        };
+
+        const response = await api.put(`/nutrition-plans/${id}`, planData);
+        return response.data;
+    } catch (error) {
+        console.error('Error updating nutrition plan:', error);
         throw error;
     }
 };

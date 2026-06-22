@@ -14,7 +14,8 @@ import {
     Scale,
     Target,
     User as UserIcon,
-    Zap
+    Zap,
+    LogOut
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -36,7 +37,7 @@ const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
     const router = useRouter();
-    const { currentUser, clients, updateProfilePhoto, updateProfile } = useUser();
+    const { currentUser, clients, updateProfilePhoto, updateProfile, logout } = useUser();
     const { plans, fetchPlans } = usePlans();
     const [isUploading, setIsUploading] = useState(false);
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
@@ -395,6 +396,19 @@ export default function ProfileScreen() {
                     )}
                 </>
             )}
+
+            {/* Logout Button */}
+            <TouchableOpacity 
+                style={styles.logoutButton} 
+                activeOpacity={0.8}
+                onPress={async () => {
+                    await logout();
+                    router.replace('/login');
+                }}
+            >
+                <LogOut size={20} color={Colors.danger} />
+                <Text style={styles.logoutText}>Cerrar Sesión</Text>
+            </TouchableOpacity>
 
             {/* Edit Modal */}
             <Modal visible={isEditModalVisible} animationType="slide" transparent>
@@ -831,5 +845,23 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 12,
         fontStyle: 'italic',
+    },
+    logoutButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: Colors.surface,
+        paddingVertical: 16,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: Colors.danger + '40',
+        marginTop: 20,
+        marginBottom: 40,
+        gap: 8,
+    },
+    logoutText: {
+        color: Colors.danger,
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

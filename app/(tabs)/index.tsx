@@ -226,7 +226,7 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 12 }}
-              onPress={() => router.push('/(tabs)/nutrition')}
+              onPress={() => router.push({ pathname: '/(tabs)/nutrition', params: { filter: 'me' } })}
             >
               <Apple size={28} color="#60A5FA" style={{ marginBottom: 12 }} />
               <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 4 }}>Plan de Alimentación</Text>
@@ -297,9 +297,6 @@ export default function HomeScreen() {
                           onPress={() => router.push({ pathname: '/(tabs)/plan', params: { clientId: client.id } })}
                         >
                           <Text style={styles.evoActionBtnText}>ASIGNAR RUTINA</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.evoActionBtn}>
-                          <Text style={styles.evoActionBtnText}>ASIGNAR DIETA</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity

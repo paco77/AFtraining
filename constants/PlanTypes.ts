@@ -60,6 +60,7 @@ export interface MonthlyPlan {
     splitType: SplitType;
     days: TrainingDay[];
     logs?: DayLog[];    // workout logs per day
+    notes?: string;     // Global plan specifications/comments
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

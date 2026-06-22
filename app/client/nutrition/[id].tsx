@@ -1,14 +1,16 @@
-import { Colors, Spacing, MuscleGroupColors } from '@/constants/theme';
+import { Colors, MuscleGroupColors, Spacing } from '@/constants/theme';
+import { useNutrition } from '@/context/NutritionContext';
 import { useUser } from '@/context/UserContext';
-import { saveNutritionPlan, searchFatSecretFoods } from '@/services/api';
+import { saveNutritionPlan, searchFatSecretFoods, updateNutritionPlan } from '@/services/api';
 import { showToast } from '@/services/toast';
 import { Picker } from '@react-native-picker/picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Calculator, Plus, Save, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Calculator, Plus, Save, Search, Trash2, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -18,7 +20,6 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-    Keyboard,
 } from 'react-native';
 import PieChart from 'react-native-pie-chart';
 
@@ -42,9 +43,10 @@ interface Meal {
 }
 
 export default function NutritionCalculatorScreen() {
-    const { id } = useLocalSearchParams();
+    const { id, planId, name: passedName, description: passedDesc } = useLocalSearchParams();
     const router = useRouter();
     const { clients } = useUser();
+    const { plans, fetchPlans } = useNutrition();
 
     const client = clients.find(c => c.id === id);
 
@@ -89,13 +91,56 @@ export default function NutritionCalculatorScreen() {
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    useEffect(() => {
+    // Manual Food Entry State
+    const [isManualEntry, setIsManualEntry] = useState(false);
+    const [manualFood, setManualFood] = useState({
+        name: '',
+        quantity: '',
+        unit: 'g' // 'g', 'pz', 'porcion'
+    }); useEffect(() => {
         if (client) {
             setWeight(client.weight?.toString() || '');
             setHeight(client.height?.toString() || '');
             setAge(client.age?.toString() || '');
         }
-    }, [client]);
+
+        if (planId) {
+            const existingPlan = plans.find(p => String(p.id) === String(planId));
+            if (existingPlan) {
+                if (existingPlan.tdee) setTdee(existingPlan.tdee);
+                if (existingPlan.target_calories) setTargetCalories(existingPlan.target_calories);
+
+                // Populate calculator fields
+                if (existingPlan.gender) setGender(existingPlan.gender);
+                if (existingPlan.weight) setWeight(existingPlan.weight.toString());
+                if (existingPlan.height) setHeight(existingPlan.height.toString());
+                if (existingPlan.age) setAge(existingPlan.age.toString());
+                if (existingPlan.activity_level) setActivityLevel(existingPlan.activity_level.toString());
+                if (existingPlan.formula) setFormula(existingPlan.formula);
+                if (existingPlan.objective) setObjective(existingPlan.objective);
+                if (existingPlan.caloric_adjustment) setCaloricAdjustment(existingPlan.caloric_adjustment.toString());
+
+                if (existingPlan.meals) {
+                    const mappedMeals = existingPlan.meals.map((m: any) => ({
+                        id: m.id || m.name.toLowerCase().replace(/\s+/g, ''),
+                        name: m.name,
+                        foods: m.foods.map((f: any) => ({
+                            id: f.fatsecret_food_id,
+                            name: f.name,
+                            servingSize: `${f.serving_size} ${f.serving_unit}`,
+                            calories: f.calories,
+                            protein: f.protein,
+                            carbs: f.carbs,
+                            fat: f.fat,
+                            amountMultiplier: 1,
+                            amountText: String(f.serving_size)
+                        }))
+                    }));
+                    setMeals(mappedMeals);
+                }
+            }
+        }
+    }, [client, planId, plans]);
 
     const calculateRequirements = () => {
         const w = parseFloat(weight);
@@ -167,6 +212,18 @@ export default function NutritionCalculatorScreen() {
     }, [proteinPerKg, lipidsPerKg, targetCalories]);
 
     // Diet Builder Logic
+    const addMealItem = () => {
+        setMeals([...meals, { id: `meal-${Date.now()}`, name: 'Nueva Comida', foods: [] }]);
+    };
+
+    const removeMealItem = (id: string) => {
+        setMeals(meals.filter(m => m.id !== id));
+    };
+
+    const renameMealItem = (id: string, newName: string) => {
+        setMeals(meals.map(m => m.id === id ? { ...m, name: newName } : m));
+    };
+
     const openSearchForMeal = (mealId: string) => {
         setActiveMealId(mealId);
         setSearchQuery('');
@@ -234,6 +291,47 @@ export default function NutritionCalculatorScreen() {
         showToast.success('Alimento añadido a ' + activeMealId);
     };
 
+    const addManualFoodToMeal = () => {
+        if (!manualFood.name || !manualFood.quantity) {
+            Alert.alert('Aviso', 'Ingresa el nombre y la cantidad del alimento.');
+            return;
+        }
+
+        const quantityParsed = parseFloat(manualFood.quantity.replace(',', '.'));
+        const value = isNaN(quantityParsed) ? 0 : quantityParsed;
+
+        let amountMultiplier = 1;
+        if (manualFood.unit === 'g') {
+            amountMultiplier = value / 100;
+        } else {
+            amountMultiplier = value;
+        }
+
+        const newFood: FoodItem = {
+            id: `manual_${Date.now()}`,
+            name: manualFood.name,
+            servingSize: manualFood.unit === 'g' ? '100g' : `1 ${manualFood.unit}`,
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fat: 0,
+            unit: manualFood.unit,
+            amountMultiplier: amountMultiplier,
+            amountText: manualFood.quantity,
+        };
+
+        setMeals(prev => prev.map(m => {
+            if (m.id === activeMealId) {
+                return { ...m, foods: [...m.foods, newFood] };
+            }
+            return m;
+        }));
+
+        Keyboard.dismiss();
+        setIsSearchModalOpen(false);
+        setManualFood({ name: '', quantity: '', unit: 'g' });
+        showToast.success('Alimento manual añadido');
+    };
     const removeFoodFromMeal = (mealId: string, index: number) => {
         setMeals(prev => prev.map(m => {
             if (m.id === mealId) {
@@ -253,7 +351,7 @@ export default function NutritionCalculatorScreen() {
                 const parsed = parseFloat(textValue.replace(',', '.'));
                 const value = isNaN(parsed) ? 0 : parsed;
 
-                if (newFoods[index].unit === 'pz') {
+                if (newFoods[index].unit === 'pz' || newFoods[index].unit === 'porcion') {
                     newFoods[index].amountMultiplier = value;
                 } else {
                     newFoods[index].amountMultiplier = value / 100;
@@ -270,15 +368,23 @@ export default function NutritionCalculatorScreen() {
                 const newFoods = [...m.foods];
                 const currentFood = { ...newFoods[index] }; // create shallow copy
                 const currentUnit = currentFood.unit || 'g';
+
                 if (currentUnit === 'g') {
                     currentFood.unit = 'pz';
-                    currentFood.amountMultiplier = 1; // Default to 1 piece
-                    currentFood.amountText = '1';
+                } else if (currentUnit === 'pz') {
+                    currentFood.unit = 'porcion';
                 } else {
                     currentFood.unit = 'g';
-                    currentFood.amountMultiplier = 1; // Default to 100g
-                    currentFood.amountText = '100';
                 }
+
+                if (currentFood.unit === 'g') {
+                    currentFood.amountMultiplier = 1;
+                    currentFood.amountText = '100';
+                } else {
+                    currentFood.amountMultiplier = 1;
+                    currentFood.amountText = '1';
+                }
+
                 newFoods[index] = currentFood;
                 return { ...m, foods: newFoods };
             }
@@ -289,7 +395,9 @@ export default function NutritionCalculatorScreen() {
     const handleSavePlan = async () => {
         try {
             const planData = {
-                client_id: id,
+                client_id: id === 'template' ? null : id,
+                name: passedName ? String(passedName) : undefined,
+                description: passedDesc ? String(passedDesc) : undefined,
                 gender,
                 weight: parseFloat(weight),
                 height: parseFloat(height),
@@ -309,8 +417,15 @@ export default function NutritionCalculatorScreen() {
                 date: new Date().toISOString().split('T')[0]
             };
 
-            await saveNutritionPlan(planData);
-            showToast.success('Plan nutricional guardado correctamente.');
+            if (planId) {
+                await updateNutritionPlan(planId as string, planData);
+                showToast.success('Plan nutricional actualizado correctamente.');
+            } else {
+                await saveNutritionPlan(planData);
+                showToast.success('Plan nutricional guardado correctamente.');
+            }
+            await fetchPlans();
+            router.back();
         } catch (error) {
             Alert.alert('Error', 'Hubo un error al guardar el plan en el servidor.');
         }
@@ -319,22 +434,19 @@ export default function NutritionCalculatorScreen() {
     // Calculate Global Accumulators
     const totalAccumulated = meals.reduce((acc, meal) => {
         meal.foods.forEach(f => {
-            const mult = f.amountMultiplier || 1;
-            acc.calories += f.calories * mult;
-            acc.protein += f.protein * mult;
-            acc.carbs += f.carbs * mult;
-            acc.fat += f.fat * mult;
+            const mult = (f.amountMultiplier === undefined || isNaN(f.amountMultiplier)) ? 1 : f.amountMultiplier;
+            acc.calories += (f.calories || 0) * mult;
+            acc.protein += (f.protein || 0) * mult;
+            acc.carbs += (f.carbs || 0) * mult;
+            acc.fat += (f.fat || 0) * mult;
         });
-        return acc;
+        return {
+            calories: isNaN(acc.calories) ? 0 : acc.calories,
+            protein: isNaN(acc.protein) ? 0 : acc.protein,
+            carbs: isNaN(acc.carbs) ? 0 : acc.carbs,
+            fat: isNaN(acc.fat) ? 0 : acc.fat,
+        };
     }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
-
-    if (!client) {
-        return (
-            <View style={styles.container}>
-                <Text style={{ marginTop: 50, textAlign: 'center' }}>Cargando cliente...</Text>
-            </View>
-        );
-    }
 
     const series = [
         { value: Math.max(1, macros.proteinCals), color: MuscleGroupColors['Pecho'] || Colors.danger },         // Using Red for Protein
@@ -397,11 +509,11 @@ export default function NutritionCalculatorScreen() {
                             <Text style={styles.label}>Nivel de Actividad:</Text>
                             <View style={[styles.pickerContainer, { marginTop: 0, marginBottom: 12 }]}>
                                 <Picker selectedValue={activityLevel} onValueChange={setActivityLevel} style={styles.picker}>
-                                    <Picker.Item label="Sedentario (1.2)" value="1.2" />
-                                    <Picker.Item label="Ligero (1.375)" value="1.375" />
-                                    <Picker.Item label="Moderado (1.55)" value="1.55" />
-                                    <Picker.Item label="Fuerte (1.725)" value="1.725" />
-                                    <Picker.Item label="Muy Fuerte (1.9)" value="1.9" />
+                                    <Picker.Item label=" (1.2) Sedentario" value="1.2" />
+                                    <Picker.Item label=" (1.375) Ligero" value="1.375" />
+                                    <Picker.Item label=" (1.55) Moderado" value="1.55" />
+                                    <Picker.Item label=" (1.725) Fuerte" value="1.725" />
+                                    <Picker.Item label=" (1.9) Muy Fuerte" value="1.9" />
                                 </Picker>
                             </View>
                         </View>
@@ -497,7 +609,11 @@ export default function NutritionCalculatorScreen() {
                             <View style={styles.chartBox}>
                                 <PieChart
                                     widthAndHeight={140}
-                                    series={series}
+                                    series={[
+                                        { value: Math.max(1, macros.proteinCals || 1), color: MuscleGroupColors['Pecho'] || Colors.danger },
+                                        { value: Math.max(1, macros.carbCals || 1), color: MuscleGroupColors['Hombros'] || Colors.accent },
+                                        { value: Math.max(1, macros.lipidCals || 1), color: MuscleGroupColors['Cuádriceps'] || '#00C853' }
+                                    ]}
                                     cover={{ radius: 0.5, color: Colors.background }}
                                 />
                                 <View style={styles.legendRow}>
@@ -512,11 +628,37 @@ export default function NutritionCalculatorScreen() {
                     </View>
                 )}
 
-                {/* 3. Meal Builder Section */}
+                {/* 3. Meal Times Section */}
+                {tdee > 0 && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>3. Tiempos de Comida</Text>
+                        <Text style={styles.label}>Configura las comidas del día:</Text>
+                        {meals.map((meal) => (
+                            <View key={meal.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12, backgroundColor: Colors.surfaceLight, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'transparent' }}>
+                                <TextInput
+                                    style={{ flex: 1, color: Colors.text, fontSize: 16 }}
+                                    value={meal.name}
+                                    onChangeText={(val) => renameMealItem(meal.id, val)}
+                                    placeholder="Nombre de comida..."
+                                    placeholderTextColor={Colors.textMuted}
+                                />
+                                <TouchableOpacity onPress={() => removeMealItem(meal.id)}>
+                                    <Trash2 size={20} color={Colors.danger} />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                        <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, justifyContent: 'center', borderRadius: 12, backgroundColor: Colors.surfaceLight, marginTop: 4 }} onPress={addMealItem}>
+                            <Plus size={16} color={Colors.primary} />
+                            <Text style={{ color: Colors.primary, fontWeight: '600' }}>Añadir tiempo de comida</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* 4. Meal Builder Section */}
                 {tdee > 0 && (
                     <View style={styles.dietBuilderSection}>
                         <View style={styles.builderHeader}>
-                            <Text style={styles.builderTitle}>3. Planificador de Comidas</Text>
+                            <Text style={styles.builderTitle}>4. Planificador de Comidas</Text>
 
                             <View style={styles.accumulatedTotalsBox}>
                                 <View style={styles.accCol}>
@@ -549,7 +691,7 @@ export default function NutritionCalculatorScreen() {
                                         {/* Subtotal of Meal */}
                                         <View style={styles.mealSubtotals}>
                                             <Text style={styles.mealSubText}>
-                                                {meal.foods.reduce((acc, f) => acc + (f.calories * (f.amountMultiplier || 1)), 0).toFixed(0)} kcal
+                                                {meal.foods.reduce((acc, f) => acc + ((f.calories || 0) * (isNaN(f.amountMultiplier as any) ? 1 : (f.amountMultiplier || 1))), 0).toFixed(0)} kcal
                                             </Text>
                                         </View>
                                     </View>
@@ -564,21 +706,21 @@ export default function NutritionCalculatorScreen() {
                                                             <TextInput
                                                                 style={styles.gramsInput}
                                                                 keyboardType="numeric"
-                                                                value={food.amountText !== undefined ? food.amountText : ((food.unit === 'pz' ? (food.amountMultiplier || 1) : ((food.amountMultiplier || 1) * 100))).toString()}
+                                                                value={String(food.amountText != null ? food.amountText : ((food.unit === 'pz' || food.unit === 'porcion') ? (food.amountMultiplier || 1) : ((food.amountMultiplier || 1) * 100)))}
                                                                 onChangeText={(val) => updateFoodAmount(meal.id, idx, val)}
                                                             />
                                                             <TouchableOpacity onPress={() => toggleFoodUnit(meal.id, idx)} style={styles.unitToggle}>
-                                                                <Text style={styles.gramsLabel}>{food.unit === 'pz' ? 'pz' : 'g'}</Text>
+                                                                <Text style={styles.gramsLabel}>{food.unit === 'pz' ? 'pz' : food.unit === 'porcion' ? 'porc' : 'g'}</Text>
                                                             </TouchableOpacity>
                                                         </View>
                                                     </View>
                                                     <View style={styles.foodMacros}>
                                                         <Text style={styles.macroMiniLabel}>P</Text>
-                                                        <Text style={styles.macroMiniValue}>{(food.protein * (food.amountMultiplier || 1)).toFixed(1)}</Text>
+                                                        <Text style={styles.macroMiniValue}>{((food.protein || 0) * (isNaN(food.amountMultiplier as any) ? 1 : (food.amountMultiplier || 1))).toFixed(1)}</Text>
                                                         <Text style={styles.macroMiniLabel}>C</Text>
-                                                        <Text style={styles.macroMiniValue}>{(food.carbs * (food.amountMultiplier || 1)).toFixed(1)}</Text>
+                                                        <Text style={styles.macroMiniValue}>{((food.carbs || 0) * (isNaN(food.amountMultiplier as any) ? 1 : (food.amountMultiplier || 1))).toFixed(1)}</Text>
                                                         <Text style={styles.macroMiniLabel}>G</Text>
-                                                        <Text style={styles.macroMiniValue}>{(food.fat * (food.amountMultiplier || 1)).toFixed(1)}</Text>
+                                                        <Text style={styles.macroMiniValue}>{((food.fat || 0) * (isNaN(food.amountMultiplier as any) ? 1 : (food.amountMultiplier || 1))).toFixed(1)}</Text>
                                                     </View>
                                                     <TouchableOpacity style={styles.deleteFoodBtn} onPress={() => removeFoodFromMeal(meal.id, idx)}>
                                                         <X size={16} color={Colors.danger} />
@@ -597,6 +739,12 @@ export default function NutritionCalculatorScreen() {
                         </View>
                     </View>
                 )}
+                {tdee > 0 && (
+                    <TouchableOpacity style={styles.mainSaveBtn} onPress={handleSavePlan}>
+                        <Save size={24} color="#000" />
+                        <Text style={styles.mainSaveBtnText}>Guardar Plan de Alimentación</Text>
+                    </TouchableOpacity>
+                )}
 
                 <View style={{ height: 100 }} />
             </ScrollView>
@@ -610,45 +758,79 @@ export default function NutritionCalculatorScreen() {
             >
                 <View style={styles.modalContainer}>
                     <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Buscar Alimento</Text>
+                        <Text style={styles.modalTitle}>Añadir Alimento</Text>
                         <TouchableOpacity onPress={() => setIsSearchModalOpen(false)}>
                             <X size={24} color={Colors.text} />
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.searchBar}>
-                        <Search size={20} color={Colors.textMuted} />
-                        <TextInput
-                            style={styles.searchInput}
-                            placeholder="Buscar alimento..."
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            onSubmitEditing={performSearch}
-                            autoCapitalize="none"
-                            autoFocus
-                        />
-                        <TouchableOpacity style={styles.searchActionBtn} onPress={performSearch}>
-                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Buscar</Text>
+                    <View style={{ flexDirection: 'row', marginBottom: 16, backgroundColor: Colors.surface, borderRadius: 8, padding: 4, marginHorizontal: 20 }}>
+                        <TouchableOpacity style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: !isManualEntry ? Colors.surfaceLight : 'transparent', borderRadius: 6 }} onPress={() => setIsManualEntry(false)}>
+                            <Text style={{ color: !isManualEntry ? Colors.text : Colors.textMuted, fontWeight: 'bold' }}>Buscar Online</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: isManualEntry ? Colors.surfaceLight : 'transparent', borderRadius: 6 }} onPress={() => setIsManualEntry(true)}>
+                            <Text style={{ color: isManualEntry ? Colors.text : Colors.textMuted, fontWeight: 'bold' }}>Añadir Manual</Text>
                         </TouchableOpacity>
                     </View>
 
-                    {isSearching ? (
-                        <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
-                    ) : (
-                        <ScrollView style={styles.searchResults}>
-                            {searchResults.map((item, idx) => (
-                                <TouchableOpacity
-                                    key={idx}
-                                    style={styles.searchItem}
-                                    onPress={() => addFoodToMeal(item)}
-                                >
-                                    <Text style={styles.searchItemName}>{item.food_name}</Text>
-                                    <Text style={styles.searchItemDesc}>{item.food_description}</Text>
+                    {!isManualEntry ? (
+                        <>
+                            <View style={styles.searchBar}>
+                                <Search size={20} color={Colors.textMuted} />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Buscar alimento..."
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    onSubmitEditing={performSearch}
+                                    autoCapitalize="none"
+                                />
+                                <TouchableOpacity style={styles.searchActionBtn} onPress={performSearch}>
+                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Buscar</Text>
                                 </TouchableOpacity>
-                            ))}
-                            {searchResults.length === 0 && searchQuery !== '' && (
-                                <Text style={styles.noResultsText}>No se encontraron resultados para "{searchQuery}"</Text>
+                            </View>
+
+                            {isSearching ? (
+                                <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
+                            ) : (
+                                <ScrollView style={styles.searchResults}>
+                                    {searchResults.map((item, idx) => (
+                                        <TouchableOpacity
+                                            key={idx}
+                                            style={styles.searchItem}
+                                            onPress={() => addFoodToMeal(item)}
+                                        >
+                                            <Text style={styles.searchItemName}>{item.food_name}</Text>
+                                            <Text style={styles.searchItemDesc}>{item.food_description}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                    {searchResults.length === 0 && searchQuery !== '' && (
+                                        <Text style={styles.noResultsText}>No se encontraron resultados para "{searchQuery}"</Text>
+                                    )}
+                                </ScrollView>
                             )}
+                        </>
+                    ) : (
+                        <ScrollView style={styles.searchResults} contentContainerStyle={{ paddingHorizontal: 20 }}>
+                            <Text style={styles.label}>Nombre del Alimento:</Text>
+                            <TextInput style={styles.input} placeholder="Ej. Avena cocida" placeholderTextColor={Colors.textMuted} value={manualFood.name} onChangeText={(val) => setManualFood(prev => ({ ...prev, name: val }))} />
+
+                            <Text style={styles.label}>Tipo de Medida:</Text>
+                            <View style={styles.pickerContainer}>
+                                <Picker selectedValue={manualFood.unit} onValueChange={(val) => setManualFood(prev => ({ ...prev, unit: val }))} style={styles.picker}>
+                                    <Picker.Item label="gramos (g)" value="g" />
+                                    <Picker.Item label="pieza (pz)" value="pz" />
+                                    <Picker.Item label="Porción" value="porcion" />
+                                </Picker>
+                            </View>
+
+                            <Text style={styles.label}>Cantidad:</Text>
+                            <TextInput style={styles.input} keyboardType="numeric" placeholder="Ej. 1, 2.5, 150..." placeholderTextColor={Colors.textMuted} value={manualFood.quantity} onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} />
+
+                            <TouchableOpacity style={styles.calcBtn} onPress={addManualFoodToMeal}>
+                                <Plus size={18} color="#fff" />
+                                <Text style={styles.calcBtnText}>Añadir Alimento Manual</Text>
+                            </TouchableOpacity>
                         </ScrollView>
                     )}
                 </View>
@@ -964,9 +1146,9 @@ const styles = StyleSheet.create({
         borderRadius: 10,
     },
     foodName: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '700',
-        color: Colors.primary,
+        color: Colors.text,
         marginBottom: 2,
     },
     gramsInput: {
@@ -979,6 +1161,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         fontSize: 12,
         backgroundColor: Colors.surface,
+        color: Colors.text,
     },
     gramsLabel: {
         fontSize: 12,
@@ -1000,6 +1183,7 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         marginRight: 4,
+        color: Colors.text,
     },
     deleteFoodBtn: {
         padding: 6,
@@ -1083,5 +1267,25 @@ const styles = StyleSheet.create({
         marginTop: 40,
         color: Colors.textMuted,
         fontSize: 14,
+    },
+    mainSaveBtn: {
+        flexDirection: 'row',
+        backgroundColor: Colors.primary,
+        marginVertical: 30,
+        paddingVertical: 16,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        elevation: 3,
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    mainSaveBtnText: {
+        color: '#000',
+        fontSize: 16,
+        fontWeight: '800',
     }
 });

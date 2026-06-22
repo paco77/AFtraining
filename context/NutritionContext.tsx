@@ -27,7 +27,8 @@ export const NutritionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
             setLoading(true);
             const response = await api.get('/nutrition-plans');
-            setPlans(response.data.data || []);
+            const data = response.data.data || response.data;
+            setPlans(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Error fetching nutrition plans:', error);
             showToast.error('No se pudieron cargar los planes de alimentación');

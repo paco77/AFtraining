@@ -1186,6 +1186,7 @@ export default function PlanScreen() {
     const [implicitClient, setImplicitClient] = useState(false);
     const [filterClientId, setFilterClientId] = useState<string | null>(null);
     const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+    const [planNotes, setPlanNotes] = useState<string>('');
 
     const router = useRouter();
     const params = useLocalSearchParams<{ clientId?: string, filterClientId?: string }>();
@@ -1339,6 +1340,7 @@ export default function PlanScreen() {
                 daysPerWeek,
                 splitType,
                 days: processedDays,
+                notes: planNotes,
             });
         } else {
             const newPlan: Omit<MonthlyPlan, 'id'> = {
@@ -1348,6 +1350,7 @@ export default function PlanScreen() {
                 daysPerWeek,
                 splitType,
                 days: processedDays,
+                notes: planNotes,
             };
             await addPlan(newPlan);
         }
@@ -1355,10 +1358,12 @@ export default function PlanScreen() {
         setStep(1);
         setAssignedClientId(null);
         setEditingPlanId(null);
+        setPlanNotes('');
     };
     const closeWizard = () => {
         setShowWizard(false);
         setEditingPlanId(null);
+        setPlanNotes('');
     };
 
     const openEditWizard = (plan: MonthlyPlan) => {
@@ -1369,6 +1374,7 @@ export default function PlanScreen() {
         setDaysPerWeek(plan.daysPerWeek);
         setSplitType(plan.splitType);
         setTrainingDays(plan.days);
+        setPlanNotes(plan.notes || '');
         setStep(4); // Go directly to exercise assignment step
         setImplicitClient(false);
         setShowWizard(true);
@@ -1969,6 +1975,28 @@ export default function PlanScreen() {
                 <Plus size={16} color="#000" />
                 <Text style={styles.addExerciseBtnText}>Añadir Día de Entrenamiento</Text>
             </TouchableOpacity>
+
+            <View style={{ marginTop: 20, paddingHorizontal: 4 }}>
+                <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Especificaciones del Plan (Opcional)</Text>
+                <TextInput
+                    style={{
+                        backgroundColor: Colors.surface,
+                        color: '#FFF',
+                        borderColor: Colors.border,
+                        borderWidth: 1,
+                        borderRadius: 12,
+                        padding: 16,
+                        minHeight: 100,
+                        textAlignVertical: 'top'
+                    }}
+                    placeholder="Ej. Descansar 90s entre ejercicios, enfocar en excéntrica..."
+                    placeholderTextColor={Colors.textMuted}
+                    value={planNotes}
+                    onChangeText={setPlanNotes}
+                    multiline
+                />
+            </View>
+
             <View style={{ height: 20 }} />
         </ScrollView>
     );

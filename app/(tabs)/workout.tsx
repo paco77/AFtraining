@@ -16,8 +16,16 @@ export default function WorkoutScreen() {
     const {
         plans,
         activeSessionDay,
+        activePlanId,
+        sessionLogs,
+        setSessionLogs,
+        completedSets,
+        setCompletedSets,
+        comment,
+        setComment,
         startWorkoutSession,
         finishWorkoutSession,
+        discardWorkoutSession,
         saveLog,
         updatePlan
     } = usePlans();
@@ -25,11 +33,6 @@ export default function WorkoutScreen() {
     const [selectedDayIdx, setSelectedDayIdx] = useState(0);
     const [isTimerVisible, setTimerVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-
-    // Local state for the current session's logs
-    const [sessionLogs, setSessionLogs] = useState<Record<string, SetLog[]>>({});
-    const [comment, setComment] = useState('');
-    const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
 
     // Grouping state
     const [isGroupingMode, setIsGroupingMode] = useState(false);
@@ -52,6 +55,22 @@ export default function WorkoutScreen() {
         return userPlans.find(p => p.id === selectedPlanId) || userPlans[0];
     }, [userPlans, selectedPlanId]);
 
+    // Restore selected plan and day if there is an active session
+    useEffect(() => {
+        if (activePlanId) {
+            setSelectedPlanId(activePlanId);
+        }
+    }, [activePlanId]);
+
+    useEffect(() => {
+        if (activePlan && activeSessionDay !== null) {
+            const sessionDayIdx = activePlan.days.findIndex(d => d.dayNumber === activeSessionDay);
+            if (sessionDayIdx !== -1) {
+                setSelectedDayIdx(sessionDayIdx);
+            }
+        }
+    }, [activePlan, activeSessionDay]);
+
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
         try {
@@ -69,24 +88,14 @@ export default function WorkoutScreen() {
     const isSessionActive = activeSessionDay !== null;
     const isOnSessionDay = isSessionActive && activeSessionDay === currentDay?.dayNumber;
 
-    // Initialize logs when session starts
-    useEffect(() => {
-        if (isSessionActive && activePlan && activeSessionDay !== null) {
-            const day = activePlan.days.find(d => d.dayNumber === activeSessionDay);
-            if (day) {
-                const initialLogs: Record<string, SetLog[]> = {};
-                day.exercises.forEach(ex => {
-                    const exId = String(ex.id || ex.exercise.id);
-                    initialLogs[exId] = Array(ex.sets).fill(null).map(() => ({ reps: 0, weight: 0 }));
-                });
-                setSessionLogs(initialLogs);
-            }
-        }
-    }, [isSessionActive, activeSessionDay]);
-
     const handleStartSession = () => {
-        if (currentDay) {
-            startWorkoutSession(currentDay.dayNumber);
+        if (activePlan && currentDay) {
+            const initialLogs: Record<string, SetLog[]> = {};
+            currentDay.exercises.forEach(ex => {
+                const exId = String(ex.id || ex.exercise.id);
+                initialLogs[exId] = Array(ex.sets).fill(null).map(() => ({ reps: 0, weight: 0 }));
+            });
+            startWorkoutSession(activePlan.id, currentDay.dayNumber, initialLogs);
         }
     };
 
@@ -134,10 +143,7 @@ export default function WorkoutScreen() {
         };
 
         await saveLog(activePlan.id, dayLog);
-        finishWorkoutSession();
-        setSessionLogs({});
-        setCompletedSets({});
-        setComment('');
+        await finishWorkoutSession();
     };
 
     const handleFinishSession = async () => {
@@ -524,7 +530,19 @@ export default function WorkoutScreen() {
                         return base;
                     })()}
                 </Text>
-                <TouchableOpacity style={styles.navBtn}>
+                <TouchableOpacity 
+                    style={styles.navBtn}
+                    onPress={() => {
+                        Alert.alert(
+                            "Descartar sesión",
+                            "¿Estás seguro de que deseas descartar esta sesión? Perderás todo el progreso.",
+                            [
+                                { text: "Cancelar", style: "cancel" },
+                                { text: "Descartar", style: "destructive", onPress: discardWorkoutSession }
+                            ]
+                        );
+                    }}
+                >
                     <MoreVertical size={24} color="#F8FAFC" />
                 </TouchableOpacity>
             </View>
