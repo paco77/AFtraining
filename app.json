@@ -4,7 +4,7 @@
     "slug": "AFTraining",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.png",
+    "icon": "./assets/images/logo-square.png",
     "scheme": "aftraining",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -15,9 +15,9 @@
       "package": "com.skecomponent.aftraining",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/logo.png",
+        "foregroundImage": "./assets/images/logo-square.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/logo.png"
+        "monochromeImage": "./assets/images/logo-square.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
