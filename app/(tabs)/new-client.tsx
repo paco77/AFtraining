@@ -13,6 +13,7 @@ import {
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     Image,
     KeyboardAvoidingView,
@@ -49,6 +50,7 @@ export default function NewClientScreen() {
         side: null as string | null,
         back: null as string | null,
     });
+    const [isSaving, setIsSaving] = useState(false);
 
     const handleSave = async () => {
         if (!name || !username || !password || !email) {
@@ -68,12 +70,15 @@ export default function NewClientScreen() {
             objectives,
         };
 
+        setIsSaving(true);
         try {
             await addClient(clientData as any, photos);
             showToast.success('Cliente registrado correctamente');
             router.back();
         } catch (error) {
             showToast.error('No se pudo registrar al cliente');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -204,7 +209,7 @@ export default function NewClientScreen() {
                         <TextInput
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Edad"
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
                             placeholderTextColor={Colors.textMuted}
                             value={age}
                             onChangeText={setAge}
@@ -212,7 +217,7 @@ export default function NewClientScreen() {
                         <TextInput
                             style={[styles.input, { flex: 1, marginLeft: 8 }]}
                             placeholder="Peso (kg)"
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
                             placeholderTextColor={Colors.textMuted}
                             value={weight}
                             onChangeText={setWeight}
@@ -223,7 +228,7 @@ export default function NewClientScreen() {
                         <TextInput
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Estatura (cm)"
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
                             placeholderTextColor={Colors.textMuted}
                             value={height}
                             onChangeText={setHeight}
@@ -299,12 +304,19 @@ export default function NewClientScreen() {
                 </View>
 
                 <TouchableOpacity
-                    style={styles.submitBtn}
+                    style={[styles.submitBtn, isSaving && { opacity: 0.7 }]}
                     activeOpacity={0.8}
                     onPress={handleSave}
+                    disabled={isSaving}
                 >
-                    <Check size={20} color="#000" />
-                    <Text style={styles.submitBtnText}>Registrar Cliente</Text>
+                    {isSaving ? (
+                        <ActivityIndicator color="#000" />
+                    ) : (
+                        <>
+                            <Check size={20} color="#000" />
+                            <Text style={styles.submitBtnText}>Registrar Cliente</Text>
+                        </>
+                    )}
                 </TouchableOpacity>
 
                 <View style={{ height: 60 }} />

@@ -1,0 +1,1252 @@
+[
+    {
+        "id": 1,
+        "training_day": {
+            "id": 2,
+            "monthly_plan_id": 1,
+            "label": "D\u00eda 2",
+            "day_number": 2,
+            "muscle_groups": [
+                "Cu\u00e1driceps",
+                "Isquios",
+                "Gl\u00fateos"
+            ],
+            "target_volumes": {
+                "": 16
+            },
+            "exercises": [
+                {
+                    "id": 8,
+                    "exercise": {
+                        "id": 27,
+                        "name": "Hip Thrust",
+                        "slug": "hip-thrust",
+                        "muscle_group_id": 3,
+                        "equipment": "Barra y banco",
+                        "description": "Con la espalda alta apoyada en un banco y la barra sobre la cadera, empuja la cadera hacia arriba apretando los gl\u00fateos en la parte alta. Baja controladamente.",
+                        "primary_muscles": [
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Isquiotibiales",
+                            "Cu\u00e1driceps",
+                            "Core"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para activaci\u00f3n de gl\u00fateos",
+                            "Mejora la potencia en sprint y salto",
+                            "Reduce el dolor de espalda baja"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 4,
+                    "min_reps": 6,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                {
+                    "id": 9,
+                    "exercise": {
+                        "id": 25,
+                        "name": "Extensi\u00f3n de Cu\u00e1driceps",
+                        "slug": "extension-de-cuadriceps",
+                        "muscle_group_id": 1,
+                        "equipment": "M\u00e1quina de extensiones",
+                        "description": "Sentado en la m\u00e1quina, coloca los tobillos detr\u00e1s del rodillo. Extiende las rodillas hasta que las piernas queden rectas. Baja controladamente sin dejar caer el peso.",
+                        "primary_muscles": [
+                            "Cu\u00e1driceps"
+                        ],
+                        "secondary_muscles": [],
+                        "benefits": [
+                            "Aislamiento puro del cu\u00e1driceps",
+                            "Ideal para precalentar las rodillas",
+                            "Excelente conexi\u00f3n mente-m\u00fasculo"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a 2 pesos ambos al fallo"
+                },
+                {
+                    "id": 10,
+                    "exercise": {
+                        "id": 23,
+                        "name": "Peso Muerto Rumano",
+                        "slug": "peso-muerto-rumano",
+                        "muscle_group_id": 2,
+                        "equipment": "Barra",
+                        "description": "De pie con la barra, baja el peso empujando la cadera hacia atr\u00e1s con las rodillas ligeramente flexionadas. Siente el estiramiento en los isquiotibiales y sube contrayendo gl\u00fateos.",
+                        "primary_muscles": [
+                            "Isquiotibiales",
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Erector espinal",
+                            "Aductores"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para isquiotibiales",
+                            "Desarrolla la cadena posterior",
+                            "Previene lesiones de rodilla"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 8,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                {
+                    "id": 11,
+                    "exercise": {
+                        "id": 60,
+                        "name": "Abducci\u00f3n de cadera en polea",
+                        "slug": null,
+                        "muscle_group_id": null,
+                        "equipment": "Poleas",
+                        "description": "Pon el grillete a la altura de la rodilla un poco abajo, atoralo en la polea y comienza a realizar la abduccion",
+                        "primary_muscles": null,
+                        "secondary_muscles": null,
+                        "benefits": null,
+                        "level": "Principiante",
+                        "is_custom": true
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": null
+                },
+                {
+                    "id": 12,
+                    "exercise": {
+                        "id": 26,
+                        "name": "Curl Femoral Acostado",
+                        "slug": "curl-femoral-acostado",
+                        "muscle_group_id": 2,
+                        "equipment": "M\u00e1quina de curl femoral",
+                        "description": "Acostado boca abajo en la m\u00e1quina, coloca los tobillos bajo el rodillo. Flexiona las rodillas llevando los talones hacia los gl\u00fateos. Baja lentamente.",
+                        "primary_muscles": [
+                            "Isquiotibiales"
+                        ],
+                        "secondary_muscles": [
+                            "Gemelos"
+                        ],
+                        "benefits": [
+                            "Aislamiento de los isquiotibiales",
+                            "Prevenci\u00f3n de lesiones en rodilla y muslo posterior",
+                            "Equilibra la fuerza cu\u00e1driceps\/isquios"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a dos pesos ambos al fallo"
+                }
+            ]
+        },
+        "start_time": "2026-06-09T21:36:56+00:00",
+        "end_time": "2026-06-09T21:36:56+00:00",
+        "comments": "B",
+        "exercise_logs": [
+            {
+                "id": 1,
+                "planned_exercise": {
+                    "id": 8,
+                    "exercise": {
+                        "id": 27,
+                        "name": "Hip Thrust",
+                        "slug": "hip-thrust",
+                        "muscle_group_id": 3,
+                        "equipment": "Barra y banco",
+                        "description": "Con la espalda alta apoyada en un banco y la barra sobre la cadera, empuja la cadera hacia arriba apretando los gl\u00fateos en la parte alta. Baja controladamente.",
+                        "primary_muscles": [
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Isquiotibiales",
+                            "Cu\u00e1driceps",
+                            "Core"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para activaci\u00f3n de gl\u00fateos",
+                            "Mejora la potencia en sprint y salto",
+                            "Reduce el dolor de espalda baja"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 4,
+                    "min_reps": 6,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 1,
+                        "set_number": 1,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 2,
+                        "set_number": 2,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 3,
+                        "set_number": 3,
+                        "weight": "98.00",
+                        "reps": 10
+                    },
+                    {
+                        "id": 4,
+                        "set_number": 4,
+                        "weight": "98.00",
+                        "reps": 9
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 1,
+                        "set_number": 1,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 2,
+                        "set_number": 2,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 3,
+                        "set_number": 3,
+                        "weight": "98.00",
+                        "reps": 10
+                    },
+                    {
+                        "id": 4,
+                        "set_number": 4,
+                        "weight": "98.00",
+                        "reps": 9
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 1,
+                        "set_number": 1,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 2,
+                        "set_number": 2,
+                        "weight": "98.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 3,
+                        "set_number": 3,
+                        "weight": "98.00",
+                        "reps": 10
+                    },
+                    {
+                        "id": 4,
+                        "set_number": 4,
+                        "weight": "98.00",
+                        "reps": 9
+                    }
+                ]
+            },
+            {
+                "id": 2,
+                "planned_exercise": {
+                    "id": 9,
+                    "exercise": {
+                        "id": 25,
+                        "name": "Extensi\u00f3n de Cu\u00e1driceps",
+                        "slug": "extension-de-cuadriceps",
+                        "muscle_group_id": 1,
+                        "equipment": "M\u00e1quina de extensiones",
+                        "description": "Sentado en la m\u00e1quina, coloca los tobillos detr\u00e1s del rodillo. Extiende las rodillas hasta que las piernas queden rectas. Baja controladamente sin dejar caer el peso.",
+                        "primary_muscles": [
+                            "Cu\u00e1driceps"
+                        ],
+                        "secondary_muscles": [],
+                        "benefits": [
+                            "Aislamiento puro del cu\u00e1driceps",
+                            "Ideal para precalentar las rodillas",
+                            "Excelente conexi\u00f3n mente-m\u00fasculo"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a 2 pesos ambos al fallo"
+                },
+                "setLogs": [
+                    {
+                        "id": 5,
+                        "set_number": 1,
+                        "weight": "50.00",
+                        "reps": 15
+                    },
+                    {
+                        "id": 6,
+                        "set_number": 2,
+                        "weight": "50.00",
+                        "reps": 14
+                    },
+                    {
+                        "id": 7,
+                        "set_number": 3,
+                        "weight": "50.00",
+                        "reps": 14
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 5,
+                        "set_number": 1,
+                        "weight": "50.00",
+                        "reps": 15
+                    },
+                    {
+                        "id": 6,
+                        "set_number": 2,
+                        "weight": "50.00",
+                        "reps": 14
+                    },
+                    {
+                        "id": 7,
+                        "set_number": 3,
+                        "weight": "50.00",
+                        "reps": 14
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 5,
+                        "set_number": 1,
+                        "weight": "50.00",
+                        "reps": 15
+                    },
+                    {
+                        "id": 6,
+                        "set_number": 2,
+                        "weight": "50.00",
+                        "reps": 14
+                    },
+                    {
+                        "id": 7,
+                        "set_number": 3,
+                        "weight": "50.00",
+                        "reps": 14
+                    }
+                ]
+            },
+            {
+                "id": 3,
+                "planned_exercise": {
+                    "id": 10,
+                    "exercise": {
+                        "id": 23,
+                        "name": "Peso Muerto Rumano",
+                        "slug": "peso-muerto-rumano",
+                        "muscle_group_id": 2,
+                        "equipment": "Barra",
+                        "description": "De pie con la barra, baja el peso empujando la cadera hacia atr\u00e1s con las rodillas ligeramente flexionadas. Siente el estiramiento en los isquiotibiales y sube contrayendo gl\u00fateos.",
+                        "primary_muscles": [
+                            "Isquiotibiales",
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Erector espinal",
+                            "Aductores"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para isquiotibiales",
+                            "Desarrolla la cadena posterior",
+                            "Previene lesiones de rodilla"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 8,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 8,
+                        "set_number": 1,
+                        "weight": "78.00",
+                        "reps": 8
+                    },
+                    {
+                        "id": 9,
+                        "set_number": 2,
+                        "weight": "78.00",
+                        "reps": 7
+                    },
+                    {
+                        "id": 10,
+                        "set_number": 3,
+                        "weight": "78.00",
+                        "reps": 6
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 8,
+                        "set_number": 1,
+                        "weight": "78.00",
+                        "reps": 8
+                    },
+                    {
+                        "id": 9,
+                        "set_number": 2,
+                        "weight": "78.00",
+                        "reps": 7
+                    },
+                    {
+                        "id": 10,
+                        "set_number": 3,
+                        "weight": "78.00",
+                        "reps": 6
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 8,
+                        "set_number": 1,
+                        "weight": "78.00",
+                        "reps": 8
+                    },
+                    {
+                        "id": 9,
+                        "set_number": 2,
+                        "weight": "78.00",
+                        "reps": 7
+                    },
+                    {
+                        "id": 10,
+                        "set_number": 3,
+                        "weight": "78.00",
+                        "reps": 6
+                    }
+                ]
+            },
+            {
+                "id": 4,
+                "planned_exercise": {
+                    "id": 11,
+                    "exercise": {
+                        "id": 60,
+                        "name": "Abducci\u00f3n de cadera en polea",
+                        "slug": null,
+                        "muscle_group_id": null,
+                        "equipment": "Poleas",
+                        "description": "Pon el grillete a la altura de la rodilla un poco abajo, atoralo en la polea y comienza a realizar la abduccion",
+                        "primary_muscles": null,
+                        "secondary_muscles": null,
+                        "benefits": null,
+                        "level": "Principiante",
+                        "is_custom": true
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 11,
+                        "set_number": 1,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 12,
+                        "set_number": 2,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 13,
+                        "set_number": 3,
+                        "weight": "60.00",
+                        "reps": 20
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 11,
+                        "set_number": 1,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 12,
+                        "set_number": 2,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 13,
+                        "set_number": 3,
+                        "weight": "60.00",
+                        "reps": 20
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 11,
+                        "set_number": 1,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 12,
+                        "set_number": 2,
+                        "weight": "60.00",
+                        "reps": 20
+                    },
+                    {
+                        "id": 13,
+                        "set_number": 3,
+                        "weight": "60.00",
+                        "reps": 20
+                    }
+                ]
+            },
+            {
+                "id": 5,
+                "planned_exercise": {
+                    "id": 12,
+                    "exercise": {
+                        "id": 26,
+                        "name": "Curl Femoral Acostado",
+                        "slug": "curl-femoral-acostado",
+                        "muscle_group_id": 2,
+                        "equipment": "M\u00e1quina de curl femoral",
+                        "description": "Acostado boca abajo en la m\u00e1quina, coloca los tobillos bajo el rodillo. Flexiona las rodillas llevando los talones hacia los gl\u00fateos. Baja lentamente.",
+                        "primary_muscles": [
+                            "Isquiotibiales"
+                        ],
+                        "secondary_muscles": [
+                            "Gemelos"
+                        ],
+                        "benefits": [
+                            "Aislamiento de los isquiotibiales",
+                            "Prevenci\u00f3n de lesiones en rodilla y muslo posterior",
+                            "Equilibra la fuerza cu\u00e1driceps\/isquios"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a dos pesos ambos al fallo"
+                },
+                "setLogs": [
+                    {
+                        "id": 14,
+                        "set_number": 1,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 15,
+                        "set_number": 2,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 16,
+                        "set_number": 3,
+                        "weight": "45.00",
+                        "reps": 10
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 14,
+                        "set_number": 1,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 15,
+                        "set_number": 2,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 16,
+                        "set_number": 3,
+                        "weight": "45.00",
+                        "reps": 10
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 14,
+                        "set_number": 1,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 15,
+                        "set_number": 2,
+                        "weight": "45.00",
+                        "reps": 12
+                    },
+                    {
+                        "id": 16,
+                        "set_number": 3,
+                        "weight": "45.00",
+                        "reps": 10
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "id": 2,
+        "training_day": {
+            "id": 2,
+            "monthly_plan_id": 1,
+            "label": "D\u00eda 2",
+            "day_number": 2,
+            "muscle_groups": [
+                "Cu\u00e1driceps",
+                "Isquios",
+                "Gl\u00fateos"
+            ],
+            "target_volumes": {
+                "": 16
+            },
+            "exercises": [
+                {
+                    "id": 8,
+                    "exercise": {
+                        "id": 27,
+                        "name": "Hip Thrust",
+                        "slug": "hip-thrust",
+                        "muscle_group_id": 3,
+                        "equipment": "Barra y banco",
+                        "description": "Con la espalda alta apoyada en un banco y la barra sobre la cadera, empuja la cadera hacia arriba apretando los gl\u00fateos en la parte alta. Baja controladamente.",
+                        "primary_muscles": [
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Isquiotibiales",
+                            "Cu\u00e1driceps",
+                            "Core"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para activaci\u00f3n de gl\u00fateos",
+                            "Mejora la potencia en sprint y salto",
+                            "Reduce el dolor de espalda baja"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 4,
+                    "min_reps": 6,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                {
+                    "id": 9,
+                    "exercise": {
+                        "id": 25,
+                        "name": "Extensi\u00f3n de Cu\u00e1driceps",
+                        "slug": "extension-de-cuadriceps",
+                        "muscle_group_id": 1,
+                        "equipment": "M\u00e1quina de extensiones",
+                        "description": "Sentado en la m\u00e1quina, coloca los tobillos detr\u00e1s del rodillo. Extiende las rodillas hasta que las piernas queden rectas. Baja controladamente sin dejar caer el peso.",
+                        "primary_muscles": [
+                            "Cu\u00e1driceps"
+                        ],
+                        "secondary_muscles": [],
+                        "benefits": [
+                            "Aislamiento puro del cu\u00e1driceps",
+                            "Ideal para precalentar las rodillas",
+                            "Excelente conexi\u00f3n mente-m\u00fasculo"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a 2 pesos ambos al fallo"
+                },
+                {
+                    "id": 10,
+                    "exercise": {
+                        "id": 23,
+                        "name": "Peso Muerto Rumano",
+                        "slug": "peso-muerto-rumano",
+                        "muscle_group_id": 2,
+                        "equipment": "Barra",
+                        "description": "De pie con la barra, baja el peso empujando la cadera hacia atr\u00e1s con las rodillas ligeramente flexionadas. Siente el estiramiento en los isquiotibiales y sube contrayendo gl\u00fateos.",
+                        "primary_muscles": [
+                            "Isquiotibiales",
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Erector espinal",
+                            "Aductores"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para isquiotibiales",
+                            "Desarrolla la cadena posterior",
+                            "Previene lesiones de rodilla"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 8,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                {
+                    "id": 11,
+                    "exercise": {
+                        "id": 60,
+                        "name": "Abducci\u00f3n de cadera en polea",
+                        "slug": null,
+                        "muscle_group_id": null,
+                        "equipment": "Poleas",
+                        "description": "Pon el grillete a la altura de la rodilla un poco abajo, atoralo en la polea y comienza a realizar la abduccion",
+                        "primary_muscles": null,
+                        "secondary_muscles": null,
+                        "benefits": null,
+                        "level": "Principiante",
+                        "is_custom": true
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": null
+                },
+                {
+                    "id": 12,
+                    "exercise": {
+                        "id": 26,
+                        "name": "Curl Femoral Acostado",
+                        "slug": "curl-femoral-acostado",
+                        "muscle_group_id": 2,
+                        "equipment": "M\u00e1quina de curl femoral",
+                        "description": "Acostado boca abajo en la m\u00e1quina, coloca los tobillos bajo el rodillo. Flexiona las rodillas llevando los talones hacia los gl\u00fateos. Baja lentamente.",
+                        "primary_muscles": [
+                            "Isquiotibiales"
+                        ],
+                        "secondary_muscles": [
+                            "Gemelos"
+                        ],
+                        "benefits": [
+                            "Aislamiento de los isquiotibiales",
+                            "Prevenci\u00f3n de lesiones en rodilla y muslo posterior",
+                            "Equilibra la fuerza cu\u00e1driceps\/isquios"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a dos pesos ambos al fallo"
+                }
+            ]
+        },
+        "start_time": "2026-06-09T21:41:33+00:00",
+        "end_time": "2026-06-09T21:41:33+00:00",
+        "comments": null,
+        "exercise_logs": [
+            {
+                "id": 6,
+                "planned_exercise": {
+                    "id": 8,
+                    "exercise": {
+                        "id": 27,
+                        "name": "Hip Thrust",
+                        "slug": "hip-thrust",
+                        "muscle_group_id": 3,
+                        "equipment": "Barra y banco",
+                        "description": "Con la espalda alta apoyada en un banco y la barra sobre la cadera, empuja la cadera hacia arriba apretando los gl\u00fateos en la parte alta. Baja controladamente.",
+                        "primary_muscles": [
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Isquiotibiales",
+                            "Cu\u00e1driceps",
+                            "Core"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para activaci\u00f3n de gl\u00fateos",
+                            "Mejora la potencia en sprint y salto",
+                            "Reduce el dolor de espalda baja"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 4,
+                    "min_reps": 6,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 17,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 18,
+                        "set_number": 2,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 19,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 20,
+                        "set_number": 4,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 17,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 18,
+                        "set_number": 2,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 19,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 20,
+                        "set_number": 4,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 17,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 18,
+                        "set_number": 2,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 19,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    },
+                    {
+                        "id": 20,
+                        "set_number": 4,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ]
+            },
+            {
+                "id": 7,
+                "planned_exercise": {
+                    "id": 9,
+                    "exercise": {
+                        "id": 25,
+                        "name": "Extensi\u00f3n de Cu\u00e1driceps",
+                        "slug": "extension-de-cuadriceps",
+                        "muscle_group_id": 1,
+                        "equipment": "M\u00e1quina de extensiones",
+                        "description": "Sentado en la m\u00e1quina, coloca los tobillos detr\u00e1s del rodillo. Extiende las rodillas hasta que las piernas queden rectas. Baja controladamente sin dejar caer el peso.",
+                        "primary_muscles": [
+                            "Cu\u00e1driceps"
+                        ],
+                        "secondary_muscles": [],
+                        "benefits": [
+                            "Aislamiento puro del cu\u00e1driceps",
+                            "Ideal para precalentar las rodillas",
+                            "Excelente conexi\u00f3n mente-m\u00fasculo"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a 2 pesos ambos al fallo"
+                },
+                "setLogs": [
+                    {
+                        "id": 21,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 22,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 23,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 21,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 22,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 23,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 21,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 22,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 23,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ]
+            },
+            {
+                "id": 8,
+                "planned_exercise": {
+                    "id": 10,
+                    "exercise": {
+                        "id": 23,
+                        "name": "Peso Muerto Rumano",
+                        "slug": "peso-muerto-rumano",
+                        "muscle_group_id": 2,
+                        "equipment": "Barra",
+                        "description": "De pie con la barra, baja el peso empujando la cadera hacia atr\u00e1s con las rodillas ligeramente flexionadas. Siente el estiramiento en los isquiotibiales y sube contrayendo gl\u00fateos.",
+                        "primary_muscles": [
+                            "Isquiotibiales",
+                            "Gl\u00fateo mayor"
+                        ],
+                        "secondary_muscles": [
+                            "Erector espinal",
+                            "Aductores"
+                        ],
+                        "benefits": [
+                            "Mejor ejercicio para isquiotibiales",
+                            "Desarrolla la cadena posterior",
+                            "Previene lesiones de rodilla"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 8,
+                    "max_reps": 12,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 24,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 25,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 26,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 24,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 25,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 26,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 24,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 25,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 26,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ]
+            },
+            {
+                "id": 9,
+                "planned_exercise": {
+                    "id": 11,
+                    "exercise": {
+                        "id": 60,
+                        "name": "Abducci\u00f3n de cadera en polea",
+                        "slug": null,
+                        "muscle_group_id": null,
+                        "equipment": "Poleas",
+                        "description": "Pon el grillete a la altura de la rodilla un poco abajo, atoralo en la polea y comienza a realizar la abduccion",
+                        "primary_muscles": null,
+                        "secondary_muscles": null,
+                        "benefits": null,
+                        "level": "Principiante",
+                        "is_custom": true
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": null
+                },
+                "setLogs": [
+                    {
+                        "id": 27,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 28,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 29,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 27,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 28,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 29,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 27,
+                        "set_number": 1,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 28,
+                        "set_number": 2,
+                        "weight": "2.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 29,
+                        "set_number": 3,
+                        "weight": "2.00",
+                        "reps": 2
+                    }
+                ]
+            },
+            {
+                "id": 10,
+                "planned_exercise": {
+                    "id": 12,
+                    "exercise": {
+                        "id": 26,
+                        "name": "Curl Femoral Acostado",
+                        "slug": "curl-femoral-acostado",
+                        "muscle_group_id": 2,
+                        "equipment": "M\u00e1quina de curl femoral",
+                        "description": "Acostado boca abajo en la m\u00e1quina, coloca los tobillos bajo el rodillo. Flexiona las rodillas llevando los talones hacia los gl\u00fateos. Baja lentamente.",
+                        "primary_muscles": [
+                            "Isquiotibiales"
+                        ],
+                        "secondary_muscles": [
+                            "Gemelos"
+                        ],
+                        "benefits": [
+                            "Aislamiento de los isquiotibiales",
+                            "Prevenci\u00f3n de lesiones en rodilla y muslo posterior",
+                            "Equilibra la fuerza cu\u00e1driceps\/isquios"
+                        ],
+                        "level": "Principiante",
+                        "is_custom": false
+                    },
+                    "sets": 3,
+                    "min_reps": 10,
+                    "max_reps": 15,
+                    "instruction": "\u00daltima serie en drop-set a dos pesos ambos al fallo"
+                },
+                "setLogs": [
+                    {
+                        "id": 30,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 1
+                    },
+                    {
+                        "id": 31,
+                        "set_number": 2,
+                        "weight": "1.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 32,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ],
+                "set_logs": [
+                    {
+                        "id": 30,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 1
+                    },
+                    {
+                        "id": 31,
+                        "set_number": 2,
+                        "weight": "1.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 32,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ],
+                "sets": [
+                    {
+                        "id": 30,
+                        "set_number": 1,
+                        "weight": "5.00",
+                        "reps": 1
+                    },
+                    {
+                        "id": 31,
+                        "set_number": 2,
+                        "weight": "1.00",
+                        "reps": 2
+                    },
+                    {
+                        "id": 32,
+                        "set_number": 3,
+                        "weight": "5.00",
+                        "reps": 5
+                    }
+                ]
+            }
+        ]
+    }
+]

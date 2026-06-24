@@ -48,6 +48,7 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator
 } from 'react-native';
 
 // ─── Wizard Steps ─────────────────────────────────────────────────────────────
@@ -127,7 +128,7 @@ const PlanCard = ({
 }: {
     plan: MonthlyPlan;
     onDelete: (id: string) => void;
-    onSaveLog: (planId: string, log: DayLog) => void;
+    onSaveLog: (planId: string, log: DayLog) => Promise<void>;
     onEdit: (plan: MonthlyPlan) => void;
 }) => {
     const { currentUser } = useUser();
@@ -138,6 +139,7 @@ const PlanCard = ({
     const [logData, setLogData] = useState<Record<string, { reps: string; weight: string }[]>>({});
     const [sessionComment, setSessionComment] = useState('');
     const [justSaved, setJustSaved] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     const isCoach = currentUser?.role === 'coach';
     const isClientOfThisPlan = currentUser?.role === 'client' && String(plan.assignedClientId) === String(currentUser.id);
@@ -202,7 +204,7 @@ const PlanCard = ({
         });
     };
 
-    const saveCurrentLog = () => {
+    const saveCurrentLog = async () => {
         if (activeDayIdx === null) return;
         const day = plan.days[activeDayIdx];
         const sessionCount = getSessionCount(day.dayNumber);
@@ -228,13 +230,19 @@ const PlanCard = ({
             exercises,
             comment: sessionComment.trim() || undefined,
         };
-        onSaveLog(plan.id, {
-            dayNumber: day.dayNumber,
-            sessions: [newSession],
-        });
-        setLogData(initEmptyForm(day)); // Reset form after saving
-        setSessionComment(''); // Clear comment after saving
-        setJustSaved(true);
+        
+        setIsSaving(true);
+        try {
+            await onSaveLog(plan.id, {
+                dayNumber: day.dayNumber,
+                sessions: [newSession],
+            });
+            setLogData(initEmptyForm(day)); // Reset form after saving
+            setSessionComment(''); // Clear comment after saving
+            setJustSaved(true);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const startNewSession = () => {
@@ -534,7 +542,7 @@ const PlanCard = ({
                                                                         style={[styles.logInput, { color: '#FFFFFF' }]}
                                                                         placeholder={String(pe.minReps)}
                                                                         placeholderTextColor={Colors.border}
-                                                                        keyboardType="numeric"
+                                                                        keyboardType="decimal-pad"
                                                                         value={setLog.reps}
                                                                         onChangeText={(v) => updateLogField(pe.exercise.id, setIdx, 'reps', v)}
                                                                     />
@@ -542,7 +550,7 @@ const PlanCard = ({
                                                                         style={[styles.logInput, { color: '#FFFFFF' }]}
                                                                         placeholder="0"
                                                                         placeholderTextColor={Colors.border}
-                                                                        keyboardType="numeric"
+                                                                        keyboardType="decimal-pad"
                                                                         value={setLog.weight}
                                                                         onChangeText={(v) => updateLogField(pe.exercise.id, setIdx, 'weight', v)}
                                                                     />
@@ -565,9 +573,15 @@ const PlanCard = ({
                                                         />
                                                     </View>
 
-                                                    <TouchableOpacity style={styles.saveLogBtn} onPress={saveCurrentLog}>
-                                                        <Check size={16} color="#000" />
-                                                        <Text style={styles.saveLogBtnText}>Guardar Registro</Text>
+                                                    <TouchableOpacity style={[styles.saveLogBtn, isSaving && { opacity: 0.7 }]} onPress={saveCurrentLog} disabled={isSaving}>
+                                                        {isSaving ? (
+                                                            <ActivityIndicator color="#000" size="small" />
+                                                        ) : (
+                                                            <>
+                                                                <Check size={16} color="#000" />
+                                                                <Text style={styles.saveLogBtnText}>Guardar Registro</Text>
+                                                            </>
+                                                        )}
                                                     </TouchableOpacity>
                                                 </>
                                             )}
@@ -905,7 +919,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                         <TextInput
                                             style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
                                             value={String(parsedData.sets)}
-                                            keyboardType="numeric"
+                                            keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, sets: parseInt(v) || 0 })}
                                         />
                                     </View>
@@ -914,7 +928,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                         <TextInput
                                             style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
                                             value={String(parsedData.minReps)}
-                                            keyboardType="numeric"
+                                            keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, minReps: parseInt(v) || 0 })}
                                         />
                                     </View>
@@ -923,7 +937,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                         <TextInput
                                             style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
                                             value={String(parsedData.maxReps)}
-                                            keyboardType="numeric"
+                                            keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, maxReps: parseInt(v) || 0 })}
                                         />
                                     </View>
@@ -1866,7 +1880,7 @@ export default function PlanScreen() {
                                                     style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
                                                     value={String(pe.sets)}
                                                     onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'sets', val)}
-                                                    keyboardType="numeric"
+                                                    keyboardType="decimal-pad"
                                                     placeholder="3"
                                                     placeholderTextColor={Colors.textMuted}
                                                 />
@@ -1879,7 +1893,7 @@ export default function PlanScreen() {
                                                         style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
                                                         value={String(pe.minReps)}
                                                         onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'minReps', val)}
-                                                        keyboardType="numeric"
+                                                        keyboardType="decimal-pad"
                                                         placeholder="8"
                                                         placeholderTextColor={Colors.textMuted}
                                                     />
@@ -1891,7 +1905,7 @@ export default function PlanScreen() {
                                                         style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
                                                         value={String(pe.maxReps)}
                                                         onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'maxReps', val)}
-                                                        keyboardType="numeric"
+                                                        keyboardType="decimal-pad"
                                                         placeholder="12"
                                                         placeholderTextColor={Colors.textMuted}
                                                     />

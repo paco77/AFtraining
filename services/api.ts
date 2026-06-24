@@ -11,7 +11,7 @@ const getBaseUrl = () => {
     }
 
     // Definimos la IP local de tu máquina para que funcione en emuladores y dispositivos físicos en desarrollo
-    const localIp = '192.168.100.125';
+    const localIp = '192.168.3.53';
 
     if (Platform.OS === 'android') {
         // En Android, 10.0.2.2 es el alias para localhost, pero para dispositivos físicos usamos la IP real

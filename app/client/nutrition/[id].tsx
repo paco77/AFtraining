@@ -47,6 +47,7 @@ export default function NutritionCalculatorScreen() {
     const router = useRouter();
     const { clients } = useUser();
     const { plans, fetchPlans } = useNutrition();
+    const [isSaving, setIsSaving] = useState(false);
 
     const client = clients.find(c => c.id === id);
 
@@ -393,6 +394,7 @@ export default function NutritionCalculatorScreen() {
     };
 
     const handleSavePlan = async () => {
+        setIsSaving(true);
         try {
             const planData = {
                 client_id: id === 'template' ? null : id,
@@ -428,6 +430,8 @@ export default function NutritionCalculatorScreen() {
             router.back();
         } catch (error) {
             Alert.alert('Error', 'Hubo un error al guardar el plan en el servidor.');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -468,8 +472,8 @@ export default function NutritionCalculatorScreen() {
                 <Text style={styles.headerTitle}>Plan de Alimentación</Text>
 
                 {tdee > 0 ? (
-                    <TouchableOpacity onPress={handleSavePlan} style={styles.saveBtnTop}>
-                        <Save size={20} color={Colors.primary} />
+                    <TouchableOpacity onPress={handleSavePlan} style={[styles.saveBtnTop, isSaving && { opacity: 0.7 }]} disabled={isSaving}>
+                        {isSaving ? <ActivityIndicator color="#FFF" size="small" /> : <Save size={20} color={Colors.primary} />}
                     </TouchableOpacity>
                 ) : (
                     <View style={{ width: 24 }} />
@@ -492,11 +496,11 @@ export default function NutritionCalculatorScreen() {
                     <View style={styles.row}>
                         <View style={styles.col}>
                             <Text style={styles.label}>Peso (kg):</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" value={weight} onChangeText={setWeight} />
+                            <TextInput style={styles.input} keyboardType="decimal-pad" value={weight} onChangeText={setWeight} />
                         </View>
                         <View style={styles.col}>
                             <Text style={styles.label}>Altura (cm):</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" value={height} onChangeText={setHeight} />
+                            <TextInput style={styles.input} keyboardType="decimal-pad" value={height} onChangeText={setHeight} />
                         </View>
                     </View>
 
@@ -593,11 +597,11 @@ export default function NutritionCalculatorScreen() {
 
                                 <View style={styles.adjRow}>
                                     <Text style={styles.adjLabel}>Proteínas (g/kg):</Text>
-                                    <TextInput style={styles.adjInput} keyboardType="numeric" value={proteinPerKg} onChangeText={setProteinPerKg} />
+                                    <TextInput style={styles.adjInput} keyboardType="decimal-pad" value={proteinPerKg} onChangeText={setProteinPerKg} />
                                 </View>
                                 <View style={styles.adjRow}>
                                     <Text style={styles.adjLabel}>Lípidos (g/kg):</Text>
-                                    <TextInput style={styles.adjInput} keyboardType="numeric" value={lipidsPerKg} onChangeText={setLipidsPerKg} />
+                                    <TextInput style={styles.adjInput} keyboardType="decimal-pad" value={lipidsPerKg} onChangeText={setLipidsPerKg} />
                                 </View>
                                 <View style={styles.adjRow}>
                                     <Text style={styles.adjLabel}>Carbohidratos (g/kg):</Text>
@@ -705,7 +709,7 @@ export default function NutritionCalculatorScreen() {
                                                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                                                             <TextInput
                                                                 style={styles.gramsInput}
-                                                                keyboardType="numeric"
+                                                                keyboardType="decimal-pad"
                                                                 value={String(food.amountText != null ? food.amountText : ((food.unit === 'pz' || food.unit === 'porcion') ? (food.amountMultiplier || 1) : ((food.amountMultiplier || 1) * 100)))}
                                                                 onChangeText={(val) => updateFoodAmount(meal.id, idx, val)}
                                                             />
@@ -740,9 +744,15 @@ export default function NutritionCalculatorScreen() {
                     </View>
                 )}
                 {tdee > 0 && (
-                    <TouchableOpacity style={styles.mainSaveBtn} onPress={handleSavePlan}>
-                        <Save size={24} color="#000" />
-                        <Text style={styles.mainSaveBtnText}>Guardar Plan de Alimentación</Text>
+                    <TouchableOpacity style={[styles.mainSaveBtn, isSaving && { opacity: 0.7 }]} onPress={handleSavePlan} disabled={isSaving}>
+                        {isSaving ? (
+                            <ActivityIndicator color="#000" />
+                        ) : (
+                            <>
+                                <Save size={20} color="#000" />
+                                <Text style={styles.mainSaveBtnText}>Guardar Plan de Alimentación</Text>
+                            </>
+                        )}
                     </TouchableOpacity>
                 )}
 
@@ -825,7 +835,7 @@ export default function NutritionCalculatorScreen() {
                             </View>
 
                             <Text style={styles.label}>Cantidad:</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" placeholder="Ej. 1, 2.5, 150..." placeholderTextColor={Colors.textMuted} value={manualFood.quantity} onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} />
+                            <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="Ej. 1, 2.5, 150..." placeholderTextColor={Colors.textMuted} value={manualFood.quantity} onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} />
 
                             <TouchableOpacity style={styles.calcBtn} onPress={addManualFoodToMeal}>
                                 <Plus size={18} color="#fff" />

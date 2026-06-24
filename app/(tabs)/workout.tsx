@@ -7,7 +7,7 @@ import RestTimerModal from '@/components/RestTimerModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { Alert, FlatList, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function WorkoutScreen() {
@@ -32,7 +32,10 @@ export default function WorkoutScreen() {
     const { currentUser } = useUser();
     const [selectedDayIdx, setSelectedDayIdx] = useState(0);
     const [isTimerVisible, setTimerVisible] = useState(false);
+    const [activeTimerSeconds, setActiveTimerSeconds] = useState(90);
+    const [restTimes, setRestTimes] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Grouping state
     const [isGroupingMode, setIsGroupingMode] = useState(false);
@@ -93,57 +96,75 @@ export default function WorkoutScreen() {
             const initialLogs: Record<string, SetLog[]> = {};
             currentDay.exercises.forEach(ex => {
                 const exId = String(ex.id || ex.exercise.id);
-                initialLogs[exId] = Array(ex.sets).fill(null).map(() => ({ reps: 0, weight: 0 }));
+                initialLogs[exId] = Array(Number(ex.sets) || 1).fill(null).map(() => ({ reps: 0, weight: 0, weightLb: 0 }));
             });
             startWorkoutSession(activePlan.id, currentDay.dayNumber, initialLogs);
         }
     };
 
     const handleUpdateSet = (exerciseId: string, setIndex: number, field: keyof SetLog, value: string) => {
-        const numValue = parseFloat(value) || 0;
+        // Permitir que el usuario ingrese comas como decimales y mantener el punto mientras teclea
+        const cleanValue = value.replace(',', '.');
+        
         setSessionLogs(prev => {
             const exerciseLogs = [...(prev[exerciseId] || [])];
-            exerciseLogs[setIndex] = { ...exerciseLogs[setIndex], [field]: numValue };
+            const newLog = { ...exerciseLogs[setIndex], [field]: cleanValue };
+            
+            if (field === 'weight') {
+                const numValue = parseFloat(cleanValue) || 0;
+                newLog.weightLb = cleanValue === '' ? '' : numValue > 0 ? parseFloat((numValue * 2.20462).toFixed(2)) : 0;
+            } else if (field === 'weightLb') {
+                const numValue = parseFloat(cleanValue) || 0;
+                newLog.weight = cleanValue === '' ? '' : numValue > 0 ? parseFloat((numValue / 2.20462).toFixed(2)) : 0;
+            }
+            
+            exerciseLogs[setIndex] = newLog;
             return { ...prev, [exerciseId]: exerciseLogs };
         });
     };
 
     const confirmFinish = async () => {
         if (!activePlan || activeSessionDay === null) return;
+        setIsSaving(true);
+        try {
+            const exercises: ExerciseLog[] = Object.entries(sessionLogs).map(([exId, sets]) => ({
+                exerciseId: exId,
+                setLogs: sets
+            }));
 
-        const exercises: ExerciseLog[] = Object.entries(sessionLogs).map(([exId, sets]) => ({
-            exerciseId: exId,
-            setLogs: sets
-        }));
-
-        // Validamos si todos los sets planificados de cada ejercicio del día fueron marcados como completados
-        const currentDay = activePlan.days.find(d => d.dayNumber === activeSessionDay);
-        const isSessionCompleted = currentDay ? currentDay.exercises.every(ex => {
-            const exId = String(ex.id || ex.exercise.id);
-            for (let idx = 0; idx < ex.sets; idx++) {
-                if (!completedSets[`${exId}-${idx}`]) {
-                    return false;
+            // Validamos si todos los sets planificados de cada ejercicio del día fueron marcados como completados
+            const currentDay = activePlan.days.find(d => d.dayNumber === activeSessionDay);
+            const isSessionCompleted = currentDay ? currentDay.exercises.every(ex => {
+                const exId = String(ex.id || ex.exercise.id);
+                const logs = sessionLogs[exId] || [];
+                const targetSets = Math.max(Number(ex.sets) || 0, logs.length);
+                for (let idx = 0; idx < targetSets; idx++) {
+                    if (!completedSets[`${exId}-${idx}`]) {
+                        return false;
+                    }
                 }
-            }
-            return true;
-        }) : true;
+                return true;
+            }) : true;
 
-        const finalComment = isSessionCompleted 
-            ? comment 
-            : (comment ? `SESIÓN NO TERMINADA - ${comment}` : 'SESIÓN NO TERMINADA');
+            const finalComment = isSessionCompleted 
+                ? comment 
+                : (comment ? `SESIÓN NO TERMINADA - ${comment}` : 'SESIÓN NO TERMINADA');
 
-        const dayLog = {
-            dayNumber: activeSessionDay,
-            sessions: [{
-                sessionNumber: 1,
-                date: new Date().toISOString(),
-                exercises: exercises,
-                comment: finalComment
-            }]
-        };
+            const dayLog = {
+                dayNumber: activeSessionDay,
+                sessions: [{
+                    sessionNumber: 1,
+                    date: new Date().toISOString(),
+                    exercises: exercises,
+                    comment: finalComment
+                }]
+            };
 
-        await saveLog(activePlan.id, dayLog);
-        await finishWorkoutSession();
+            await saveLog(activePlan.id, dayLog);
+            await finishWorkoutSession();
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleFinishSession = async () => {
@@ -272,7 +293,28 @@ export default function WorkoutScreen() {
                         {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${item.instruction}` : ''}
                      </Text>
                    </View>
-                   <Dumbbell size={20} color="#2BB0FF" />
+                   <View style={{ alignItems: 'center', marginLeft: 10 }}>
+                        <Text style={{ color: Colors.textMuted, fontSize: 10, marginBottom: 4, fontWeight: '600' }}>Descanso (s)</Text>
+                        <TextInput
+                            style={{ 
+                                backgroundColor: Colors.surface, 
+                                color: '#fff', 
+                                borderRadius: 6, 
+                                paddingHorizontal: 8, 
+                                paddingVertical: 4, 
+                                fontSize: 13, 
+                                width: 55, 
+                                textAlign: 'center', 
+                                borderWidth: 1, 
+                                borderColor: Colors.outline 
+                            }}
+                            keyboardType="number-pad"
+                            placeholder="90"
+                            placeholderTextColor={Colors.textMuted}
+                            value={restTimes[exerciseId] || ''}
+                            onChangeText={(val) => setRestTimes(prev => ({ ...prev, [exerciseId]: val }))}
+                        />
+                    </View>
                 </View>
 
                 {logs.map((log, idx) => {
@@ -285,9 +327,20 @@ export default function WorkoutScreen() {
                               <Text style={styles.inputLabelDark}>peso (KG)</Text>
                               <TextInput
                                   style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.weight ? String(log.weight) : ''}
-                                  keyboardType="numeric"
+                                  value={log.weight !== undefined && log.weight !== null ? String(log.weight) : ''}
+                                  keyboardType="decimal-pad"
                                   onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weight', val)}
+                                  placeholder="--"
+                                  placeholderTextColor="#0F172A"
+                              />
+                           </View>
+                           <View style={styles.inputGroupDark}>
+                              <Text style={styles.inputLabelDark}>peso (LB)</Text>
+                              <TextInput
+                                  style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
+                                  value={log.weightLb !== undefined && log.weightLb !== null ? String(log.weightLb) : ''}
+                                  keyboardType="decimal-pad"
+                                  onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weightLb', val)}
                                   placeholder="--"
                                   placeholderTextColor="#0F172A"
                               />
@@ -296,8 +349,8 @@ export default function WorkoutScreen() {
                               <Text style={styles.inputLabelDark}>reps</Text>
                               <TextInput
                                   style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.reps ? String(log.reps) : ''}
-                                  keyboardType="numeric"
+                                  value={log.reps !== undefined && log.reps !== null ? String(log.reps) : ''}
+                                  keyboardType="decimal-pad"
                                   onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'reps', val)}
                                   placeholder="--"
                                   placeholderTextColor="#0F172A"
@@ -310,6 +363,8 @@ export default function WorkoutScreen() {
                                   setCompletedSets(prev => {
                                       const nextStatus = !prev[key];
                                       if (nextStatus) {
+                                          const customRest = parseInt(restTimes[exerciseId]) || 90;
+                                          setActiveTimerSeconds(customRest);
                                           setTimeout(() => setTimerVisible(true), 50);
                                       }
                                       return { ...prev, [key]: nextStatus };
@@ -327,7 +382,7 @@ export default function WorkoutScreen() {
                     onPress={() => {
                         setSessionLogs(prev => {
                             const current = prev[exerciseId] || [];
-                            return { ...prev, [exerciseId]: [...current, { reps: 0, weight: 0 }] };
+                            return { ...prev, [exerciseId]: [...current, { reps: 0, weight: 0, weightLb: 0 }] };
                         });
                     }}
                 >
@@ -558,7 +613,7 @@ export default function WorkoutScreen() {
                     renderItem={renderGroupItem}
                     contentContainerStyle={styles.listContentDark}
                     showsVerticalScrollIndicator={false}
-                    ListEmptyComponent={() => (
+                    ListEmptyComponent={(
                         <View style={styles.emptyExercises}>
                             <Dumbbell size={32} color={colors.textMuted} />
                             <Text style={[styles.emptyExercisesText, { color: colors.textMuted }]}>
@@ -566,7 +621,7 @@ export default function WorkoutScreen() {
                             </Text>
                         </View>
                     )}
-                    ListFooterComponent={() => currentDay && currentDay.exercises.length > 0 ? (
+                    ListFooterComponent={currentDay && currentDay.exercises.length > 0 ? (
                         <View style={styles.footerDark}>
                             <Text style={styles.footerTitleDark}>COMENTARIOS DE LA SESIÓN</Text>
                             <TextInput
@@ -579,10 +634,15 @@ export default function WorkoutScreen() {
                             />
                             
                             <TouchableOpacity 
-                                style={styles.submitBtnDark}
+                                style={[styles.submitBtnDark, isSaving && { opacity: 0.7 }]}
                                 onPress={handleFinishSession}
+                                disabled={isSaving}
                             >
-                                <Text style={styles.submitBtnTextDark}>GUARDAR SESIÓN</Text>
+                                {isSaving ? (
+                                    <ActivityIndicator color="#000" />
+                                ) : (
+                                    <Text style={styles.submitBtnTextDark}>GUARDAR SESIÓN</Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                     ) : null}
@@ -592,7 +652,7 @@ export default function WorkoutScreen() {
             <RestTimerModal 
                 visible={isTimerVisible} 
                 onClose={() => setTimerVisible(false)} 
-                initialSeconds={90} 
+                initialSeconds={activeTimerSeconds} 
             />
         </View>
     );

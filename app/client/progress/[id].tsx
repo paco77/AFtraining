@@ -6,6 +6,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Camera, Check, FileText, Plus, Scale, Trash, Activity } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     Image,
     KeyboardAvoidingView,
@@ -189,7 +190,7 @@ export default function ClientProgressScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Peso (kg)"
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                         placeholderTextColor={Colors.textMuted}
                         value={weight}
                         onChangeText={setWeight}
@@ -214,7 +215,7 @@ export default function ClientProgressScreen() {
                             <TextInput
                                 style={[styles.input, styles.measurementValueInput]}
                                 placeholder="Valor"
-                                keyboardType="numeric"
+                                keyboardType="decimal-pad"
                                 placeholderTextColor={Colors.textMuted}
                                 value={meas.value}
                                 onChangeText={(val) => updateMeasurement(idx, 'value', val)}
@@ -263,13 +264,19 @@ export default function ClientProgressScreen() {
                 </View>
 
                 <TouchableOpacity
-                    style={styles.submitBtn}
+                    style={[styles.submitBtn, isLoading && { opacity: 0.7 }]}
                     activeOpacity={0.8}
                     onPress={handleSave}
                     disabled={isLoading}
                 >
-                    <Check size={20} color="#000" />
-                    <Text style={styles.submitBtnText}>{isLoading ? 'Guardando...' : 'Guardar Progreso'}</Text>
+                    {isLoading ? (
+                        <ActivityIndicator color="#000" />
+                    ) : (
+                        <>
+                            <Check size={20} color="#000" />
+                            <Text style={styles.submitBtnText}>Guardar Progreso</Text>
+                        </>
+                    )}
                 </TouchableOpacity>
 
                 <View style={{ height: 40 }} />

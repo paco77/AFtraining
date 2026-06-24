@@ -16,7 +16,7 @@ interface PlanContextType {
     setPlans: React.Dispatch<React.SetStateAction<MonthlyPlan[]>>;
     addPlan: (plan: Omit<MonthlyPlan, 'id'>) => Promise<void>;
     deletePlan: (id: string) => void;
-    saveLog: (planId: string, log: DayLog) => void;
+    saveLog: (planId: string, log: DayLog) => Promise<void>;
     fetchHistory: (clientId?: string) => Promise<any[]>;
     updatePlan: (planId: string, planData: Partial<MonthlyPlan>) => Promise<void>;
     fetchPlans: () => Promise<void>;
@@ -44,7 +44,7 @@ const PlanContext = createContext<PlanContextType>({
     setPlans: () => { },
     addPlan: async () => { },
     deletePlan: () => { },
-    saveLog: () => { },
+    saveLog: async () => { },
     fetchHistory: async () => [],
     updatePlan: async () => { },
     fetchPlans: async () => { },
@@ -341,6 +341,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                             .map((set, idx) => ({
                                 set_number: idx + 1,
                                 weight: set.weight || 0,
+                                weight_lb: set.weightLb || 0,
                                 reps: set.reps || 0
                             }))
                             .filter(set => set.weight > 0 || set.reps > 0)
@@ -384,14 +385,27 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     const [sessionLogs, setSessionLogs] = useState<Record<string, SetLog[]>>({});
     const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
     const [comment, setComment] = useState('');
+    const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null>(null);
 
     // Restore unfinished session on init
     useEffect(() => {
+        if (!isInitialized || !currentUser) {
+            if (!currentUser) setLastLoadedUserId(null);
+            return;
+        }
+        if (lastLoadedUserId === currentUser.id) return;
+
         const loadSession = async () => {
             try {
                 const stored = await AsyncStorage.getItem(WORKOUT_SESSION_KEY);
                 if (stored) {
                     const parsed = JSON.parse(stored);
+                    
+                    if (parsed.userId && parsed.userId !== currentUser.id) {
+                        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
+                        return;
+                    }
+
                     setActivePlanId(parsed.planId);
                     setActiveSessionDay(parsed.dayNumber);
                     setSessionLogs(parsed.sessionLogs || {});
@@ -401,24 +415,35 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                     import('react-native').then(({ Alert }) => {
                         Alert.alert(
                             'Sesión sin terminar',
-                            'Tienes una sesión de entrenamiento activa. Ve a la pestaña de entrenamiento para continuarla o descartarla.',
+                            'Tienes una sesión de entrenamiento activa. ¿Deseas continuarla ahora?',
                             [
-                                { text: 'Más tarde', style: 'cancel' }
+                                { text: 'Más tarde', style: 'cancel' },
+                                { 
+                                    text: 'Continuar sesión', 
+                                    onPress: () => {
+                                        import('expo-router').then(({ router }) => {
+                                            router.push('/(tabs)/workout');
+                                        });
+                                    }
+                                }
                             ]
                         );
                     });
                 }
             } catch (e) {
                 console.error('Failed to load active session from AsyncStorage', e);
+            } finally {
+                setLastLoadedUserId(currentUser.id);
             }
         };
         loadSession();
-    }, []);
+    }, [isInitialized, currentUser, lastLoadedUserId]);
 
     // Save session automatically whenever state changes
     useEffect(() => {
-        if (activeSessionDay !== null && activePlanId !== null) {
+        if (activeSessionDay !== null && activePlanId !== null && currentUser) {
             const dataToSave = {
+                userId: currentUser.id,
                 planId: activePlanId,
                 dayNumber: activeSessionDay,
                 sessionLogs,
@@ -427,7 +452,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             };
             AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(dataToSave)).catch(console.error);
         }
-    }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment]);
+    }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment, currentUser]);
 
     const startWorkoutSession = useCallback((planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => {
         setActivePlanId(planId);

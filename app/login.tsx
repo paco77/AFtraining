@@ -67,6 +67,7 @@ export default function LoginScreen() {
             const { access_token, user } = response.data;
 
             await login(user, access_token, rememberMe);
+            showToast.success('Sesión iniciada');
             router.replace('/(tabs)');
         } catch (error: any) {
             const status = error.response?.status;
@@ -179,9 +180,11 @@ export default function LoginScreen() {
                                 end={{ x: 1, y: 1 }}
                                 style={styles.loginBtn}
                             >
-                                <Text style={styles.loginBtnText}>
-                                    {isLoading ? 'INICIANDO...' : 'COMENZAR'}
-                                </Text>
+                                {isLoading ? (
+                                    <ActivityIndicator color="#000" />
+                                ) : (
+                                    <Text style={styles.loginBtnText}>COMENZAR</Text>
+                                )}
                             </LinearGradient>
                         </TouchableOpacity>
 

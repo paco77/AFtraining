@@ -17,8 +17,9 @@ export interface PlannedExercise {
 
 /** Log for a single set (actual reps + weight achieved) */
 export interface SetLog {
-    reps: number;
-    weight: number;     // kg
+    reps: number | string;
+    weight: number | string;     // kg
+    weightLb?: number | string;  // lb
 }
 
 /** Log for a complete exercise within a day */

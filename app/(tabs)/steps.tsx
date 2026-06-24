@@ -89,7 +89,7 @@ export default function StepsScreen() {
                         style={styles.input}
                         placeholder="Ej: 5000"
                         placeholderTextColor={Colors.textMuted}
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
                         value={steps}
                         onChangeText={setSteps}
                         editable={!saving}

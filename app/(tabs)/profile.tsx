@@ -40,6 +40,7 @@ export default function ProfileScreen() {
     const { currentUser, clients, updateProfilePhoto, updateProfile, logout } = useUser();
     const { plans, fetchPlans } = usePlans();
     const [isUploading, setIsUploading] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -73,6 +74,7 @@ export default function ProfileScreen() {
     };
 
     const handleSaveProfile = async () => {
+        setIsSavingProfile(true);
         try {
             await updateProfile({
                 experienceYears: editForm.experienceYears ? parseInt(editForm.experienceYears, 10) : undefined,
@@ -81,6 +83,8 @@ export default function ProfileScreen() {
             setIsEditModalVisible(false);
         } catch (error) {
             Alert.alert('Error', 'No se pudo actualizar el perfil');
+        } finally {
+            setIsSavingProfile(false);
         }
     };
 
@@ -426,7 +430,7 @@ export default function ProfileScreen() {
                                 style={styles.input}
                                 value={editForm.experienceYears}
                                 onChangeText={(t) => setEditForm(prev => ({ ...prev, experienceYears: t }))}
-                                keyboardType="numeric"
+                                keyboardType="decimal-pad"
                                 placeholderTextColor={Colors.textMuted}
                                 placeholder="Ej. 5"
                             />
@@ -441,8 +445,8 @@ export default function ProfileScreen() {
                                 placeholder="Escribe tu formación..."
                             />
 
-                            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
-                                <Text style={styles.saveBtnText}>Guardar</Text>
+                            <TouchableOpacity style={[styles.saveBtn, isSavingProfile && { opacity: 0.7 }]} onPress={handleSaveProfile} disabled={isSavingProfile}>
+                                {isSavingProfile ? <ActivityIndicator color="#000" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
                             </TouchableOpacity>
                         </View>
                     </View>

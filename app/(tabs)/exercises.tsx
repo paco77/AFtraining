@@ -32,6 +32,7 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ const ExerciseCard = ({ exercise, onDelete }: { exercise: Exercise; onDelete?: (
 interface AddExerciseFormProps {
     visible: boolean;
     onClose: () => void;
-    onAdd: (exercise: Exercise) => void;
+    onAdd: (exercise: Exercise) => Promise<void>;
 }
 
 const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
@@ -218,6 +219,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
     const { muscleGroups } = usePlans();
     const [selectedGroup, setSelectedGroup] = useState<string>('Pecho');
     const [selectedLevel, setSelectedLevel] = useState<Level>('Principiante');
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (muscleGroups.length > 0 && !muscleGroups.includes(selectedGroup)) {
@@ -236,7 +238,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
         setSelectedLevel('Principiante');
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!name.trim() || !equipment.trim()) {
             Alert.alert('Campos requeridos', 'Por favor completa al menos el nombre y equipo.');
             return;
@@ -264,9 +266,14 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
             isCustom: true,
         };
 
-        onAdd(newExercise);
-        resetForm();
-        onClose();
+        setIsSaving(true);
+        try {
+            await onAdd(newExercise);
+            resetForm();
+            onClose();
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -420,9 +427,15 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
                         />
 
                         {/* Submit */}
-                        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                            <Plus size={18} color="#000" />
-                            <Text style={styles.submitButtonText}>Agregar Ejercicio</Text>
+                        <TouchableOpacity style={[styles.submitButton, isSaving && { opacity: 0.7 }]} onPress={handleSubmit} disabled={isSaving}>
+                            {isSaving ? (
+                                <ActivityIndicator color="#000" />
+                            ) : (
+                                <>
+                                    <Plus size={18} color="#000" />
+                                    <Text style={styles.submitButtonText}>Agregar Ejercicio</Text>
+                                </>
+                            )}
                         </TouchableOpacity>
 
                         <View style={{ height: 40 }} />
