@@ -1,6 +1,7 @@
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { Redirect, Tabs, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlans } from '@/context/PlanContext';
 import { Fonts } from '@/constants/theme';
 import {
@@ -27,6 +28,7 @@ import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, Toucha
 export default function TabLayout() {
   const { mode, toggle, colors } = useTheme();
   const { currentUser, isInitialized, logout } = useUser();
+  const insets = useSafeAreaInsets();
   const { activeSessionDay } = usePlans();
   const [menuVisible, setMenuVisible] = useState(false);
   const router = useRouter();
@@ -58,6 +60,7 @@ export default function TabLayout() {
   return (
     <>
       <Tabs
+        sceneContainerStyle={{ paddingBottom: insets.bottom }}
         screenOptions={{
           headerTitle: () => (
             <View style={{ alignItems: 'center' }}>

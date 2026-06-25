@@ -4,14 +4,17 @@ import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import RestTimerModal from '@/components/RestTimerModal';
+import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility } from 'lucide-react-native';
+import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility, CloudAlert } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function WorkoutScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { colors } = useTheme();
     const {
         plans,
@@ -27,7 +30,9 @@ export default function WorkoutScreen() {
         finishWorkoutSession,
         discardWorkoutSession,
         saveLog,
-        updatePlan
+        updatePlan,
+        pendingOfflineLogs,
+        syncOfflineLogs
     } = usePlans();
     const { currentUser } = useUser();
     const [selectedDayIdx, setSelectedDayIdx] = useState(0);
@@ -496,7 +501,7 @@ export default function WorkoutScreen() {
                 
                 <ScrollView 
                     showsVerticalScrollIndicator={false} 
-                    contentContainerStyle={{ gap: 16, paddingBottom: 120 }}
+                    contentContainerStyle={{ gap: 16, paddingBottom: Math.max(120, insets.bottom + 100) }}
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
                 >
                     {activePlan.days.map((day, idx) => {
@@ -585,6 +590,20 @@ export default function WorkoutScreen() {
                         return base;
                     })()}
                 </Text>
+                
+                {pendingOfflineLogs > 0 && (
+                    <TouchableOpacity 
+                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eab308', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginRight: 8 }}
+                        onPress={() => {
+                            showToast.info('Sincronizando entrenamientos pendientes...');
+                            syncOfflineLogs();
+                        }}
+                    >
+                        <CloudAlert size={14} color="#000" />
+                        <Text style={{ fontSize: 12, fontWeight: '700', marginLeft: 4, color: '#000' }}>{pendingOfflineLogs}</Text>
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity 
                     style={styles.navBtn}
                     onPress={() => {

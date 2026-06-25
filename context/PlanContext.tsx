@@ -3,6 +3,7 @@ import { DayLog, MonthlyPlan, MONTHS, SetLog } from '@/constants/PlanTypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { showToast } from '@/services/toast';
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
+import NetInfo from '@react-native-community/netinfo';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../services/api';
 import { useUser } from './UserContext';
@@ -10,6 +11,7 @@ import { useUser } from './UserContext';
 // ─── Cache Config ─────────────────────────────────────────────────────────────
 const CACHE_SUBDIR = 'af_cache';
 const WORKOUT_SESSION_KEY = 'active_workout_session';
+const OFFLINE_WORKOUTS_KEY = 'offline_workouts_queue';
 
 interface PlanContextType {
     plans: MonthlyPlan[];
@@ -21,6 +23,7 @@ interface PlanContextType {
     updatePlan: (planId: string, planData: Partial<MonthlyPlan>) => Promise<void>;
     fetchPlans: () => Promise<void>;
     addExercise: (exercise: Exercise) => Promise<Exercise | undefined>;
+    updateExercise: (id: string, exercise: Exercise) => Promise<Exercise | undefined>;
     // Session management
     activeSessionDay: number | null;
     activePlanId: string | null;
@@ -37,6 +40,9 @@ interface PlanContextType {
     allExercises: Exercise[];
     muscleGroups: string[];
     refreshMetadata: () => Promise<void>;
+    // Offline sync
+    pendingOfflineLogs: number;
+    syncOfflineLogs: () => Promise<void>;
 }
 
 const PlanContext = createContext<PlanContextType>({
@@ -63,6 +69,9 @@ const PlanContext = createContext<PlanContextType>({
     muscleGroups: [],
     refreshMetadata: async () => { },
     addExercise: async () => undefined,
+    updateExercise: async () => undefined,
+    pendingOfflineLogs: 0,
+    syncOfflineLogs: async () => { },
 });
 
 const mapApiExerciseToFrontend = (apiEx: any): Exercise => {
@@ -304,6 +313,36 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         }
     }, [refreshMetadata]);
 
+    const updateExercise = useCallback(async (id: string, exercise: Exercise): Promise<Exercise | undefined> => {
+        try {
+            const payload = {
+                name: exercise.name,
+                muscle_group: exercise.muscleGroup,
+                equipment: exercise.equipment,
+                description: exercise.description,
+                primary_muscles: exercise.primaryMuscles,
+                secondary_muscles: exercise.secondaryMuscles,
+                benefits: exercise.benefits,
+                level: exercise.level,
+                is_custom: exercise.isCustom
+            };
+            const response = await api.put(`exercises/${id}`, payload);
+            const updatedExercise = mapApiExerciseToFrontend(response.data.data || response.data);
+            
+            setAllExercises(prev => prev.map(ex => ex.id === id ? updatedExercise : ex));
+
+            // Sync cache with backend in background
+            refreshMetadata();
+
+            showToast.success('Ejercicio actualizado correctamente');
+            return updatedExercise;
+        } catch (error: any) {
+            console.error('Error updating custom exercise:', error.response?.data || error.message);
+            showToast.error('Error al actualizar el ejercicio');
+            return undefined;
+        }
+    }, [refreshMetadata]);
+
     useEffect(() => {
         if (isInitialized && currentUser) {
             fetchPlans();
@@ -321,51 +360,6 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
-    const saveLog = useCallback(async (planId: string, log: DayLog) => {
-        try {
-            const plan = plans.find(p => p.id === planId);
-            const day = plan?.days.find(d => d.dayNumber === log.dayNumber);
-
-            if (!day?.id) {
-                showToast.error('No se encontró el ID del día');
-                return;
-            }
-
-            const payload = {
-                training_day_id: day.id,
-                comments: log.sessions[0]?.comment || '',
-                exercises: log.sessions[0]?.exercises
-                    .map(exLog => ({
-                        planned_exercise_id: exLog.exerciseId,
-                        set_logs: exLog.setLogs
-                            .map((set, idx) => ({
-                                set_number: idx + 1,
-                                weight: set.weight || 0,
-                                weight_lb: set.weightLb || 0,
-                                reps: set.reps || 0
-                            }))
-                            .filter(set => set.weight > 0 || set.reps > 0)
-                    }))
-                    .filter(ex => ex.set_logs.length > 0)
-            };
-
-            await api.post('workouts/bulk', payload);
-            showToast.success('Entrenamiento guardado');
-            fetchPlans();
-            fetchHistory(); // Refresh history as well
-        } catch (error: any) {
-            const status = error.response?.status;
-            if (!status || status >= 500) {
-                console.error('[saveLog] Error:', error.response?.data || error);
-            } else {
-                console.warn('[saveLog] Validation Error:', error.response?.data || error);
-            }
-            
-            const errMsg = error.response?.data?.message || 'Error al guardar entrenamiento';
-            showToast.error(errMsg);
-        }
-    }, [plans, fetchPlans]);
-
     const fetchHistory = useCallback(async (clientId?: string) => {
         try {
             const params = clientId ? { client_id: clientId } : {};
@@ -380,12 +374,146 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    const saveLog = useCallback(async (planId: string, log: DayLog) => {
+        let payload: any;
+        try {
+            const plan = plans.find(p => p.id === planId);
+            const day = plan?.days.find(d => d.dayNumber === log.dayNumber);
+
+            if (!day?.id) {
+                showToast.error('No se encontró el ID del día');
+                return;
+            }
+
+            payload = {
+                training_day_id: day.id,
+                start_time: log.sessions[0]?.date,
+                end_time: log.sessions[0]?.date,
+                comments: log.sessions[0]?.comment || '',
+                exercises: log.sessions[0]?.exercises
+                    .map(exLog => ({
+                        planned_exercise_id: exLog.exerciseId,
+                        set_logs: exLog.setLogs
+                            .map((set, idx) => ({
+                                set_number: idx + 1,
+                                weight: Number(set.weight) || 0,
+                                weight_lb: Number(set.weightLb) || 0,
+                                reps: Number(set.reps) || 0
+                            }))
+                            .filter(set => set.weight > 0 || set.reps > 0)
+                    }))
+                    .filter(ex => ex.set_logs.length > 0)
+            };
+
+            await api.post('workouts/bulk', payload);
+            showToast.success('Entrenamiento guardado');
+            fetchPlans();
+            fetchHistory(); // Refresh history as well
+        } catch (error: any) {
+            const status = error.response?.status;
+            
+            // Check if it's a network error
+            if (error.message === 'Network Error' || !error.response || status === 0) {
+                try {
+                    const stored = await AsyncStorage.getItem(OFFLINE_WORKOUTS_KEY);
+                    const queue = stored ? JSON.parse(stored) : [];
+                    queue.push(payload);
+                    await AsyncStorage.setItem(OFFLINE_WORKOUTS_KEY, JSON.stringify(queue));
+                    setPendingOfflineLogs(queue.length);
+                    showToast.info('Entrenamiento guardado (Modo Sin Conexión). Se sincronizará automáticamente.');
+                    return; // Skip normal error handling
+                } catch (queueError) {
+                    console.error('Failed to queue offline workout:', queueError);
+                }
+            }
+
+            if (!status || status >= 500) {
+                console.error('[saveLog] Error:', error.response?.data || error);
+            } else {
+                console.warn('[saveLog] Validation Error:', error.response?.data || error);
+            }
+            
+            const errMsg = error.response?.data?.message || 'Error al guardar entrenamiento';
+            showToast.error(errMsg);
+        }
+    }, [plans, fetchPlans]);
+
+    const syncOfflineLogs = useCallback(async () => {
+        try {
+            const stored = await AsyncStorage.getItem(OFFLINE_WORKOUTS_KEY);
+            if (!stored) return;
+            const queue = JSON.parse(stored);
+            if (!Array.isArray(queue) || queue.length === 0) return;
+
+            let remainingQueue = [...queue];
+            let syncedCount = 0;
+
+            for (const payload of queue) {
+                try {
+                    await api.post('workouts/bulk', payload);
+                    remainingQueue = remainingQueue.filter(p => p !== payload);
+                    syncedCount++;
+                } catch (error: any) {
+                    // Only keep in queue if it's a network error, otherwise it might be a validation error 
+                    // that will NEVER succeed, which would block the queue forever.
+                    if (error.message !== 'Network Error' && error.response && error.response.status !== 0 && error.response.status < 500) {
+                        console.error('Offline sync failed permanently for a log:', error.response.data);
+                        remainingQueue = remainingQueue.filter(p => p !== payload); // Remove it so it doesn't block
+                    } else {
+                        break; // Network still down or server error, stop trying the rest
+                    }
+                }
+            }
+
+            if (remainingQueue.length === 0) {
+                await AsyncStorage.removeItem(OFFLINE_WORKOUTS_KEY);
+                setPendingOfflineLogs(0);
+                if (syncedCount > 0) {
+                    showToast.success(`Se sincronizaron ${syncedCount} entrenamiento(s) pendiente(s)`);
+                    fetchHistory();
+                }
+            } else {
+                await AsyncStorage.setItem(OFFLINE_WORKOUTS_KEY, JSON.stringify(remainingQueue));
+                setPendingOfflineLogs(remainingQueue.length);
+            }
+        } catch (e) {
+            console.error('Error during offline sync:', e);
+        }
+    }, [fetchHistory]);
+
+    // Listen for network changes to trigger sync
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            if (state.isConnected && state.isInternetReachable !== false) {
+                syncOfflineLogs();
+            }
+        });
+        return () => unsubscribe();
+    }, [syncOfflineLogs]);
+
     const [activeSessionDay, setActiveSessionDay] = useState<number | null>(null);
     const [activePlanId, setActivePlanId] = useState<string | null>(null);
     const [sessionLogs, setSessionLogs] = useState<Record<string, SetLog[]>>({});
     const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
     const [comment, setComment] = useState('');
     const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null>(null);
+    const [pendingOfflineLogs, setPendingOfflineLogs] = useState<number>(0);
+
+    // Initialize pendingOfflineLogs count
+    useEffect(() => {
+        const loadOfflineQueue = async () => {
+            try {
+                const stored = await AsyncStorage.getItem(OFFLINE_WORKOUTS_KEY);
+                if (stored) {
+                    const queue = JSON.parse(stored);
+                    setPendingOfflineLogs(queue.length || 0);
+                }
+            } catch (e) {
+                console.error('Error loading offline queue:', e);
+            }
+        };
+        loadOfflineQueue();
+    }, []);
 
     // Restore unfinished session on init
     useEffect(() => {
@@ -507,7 +635,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             refreshMetadata,
             updatePlan,
             fetchPlans,
-            addExercise
+            addExercise,
+            updateExercise,
+            pendingOfflineLogs,
+            syncOfflineLogs
         }}>
             {children}
         </PlanContext.Provider>

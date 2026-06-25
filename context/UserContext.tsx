@@ -161,8 +161,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             const response = await api.post('clients', dataToSend, { headers });
             const newClient = mapApiUserToFrontend(response.data.data);
             setClients((prev) => [...prev, newClient as Client]);
-        } catch (error) {
-            console.error('Error adding client:', error);
+        } catch (error: any) {
+            console.log('Error adding client:', error.response?.data || error.message);
             throw error;
         }
     }, []);

@@ -4,6 +4,7 @@ import api from '@/services/api';
 import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, Eye, EyeOff } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
@@ -24,6 +25,7 @@ const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { login, currentUser, isInitialized } = useUser();
     const [loginId, setLoginId] = useState('');
     const [password, setPassword] = useState('');
@@ -87,7 +89,11 @@ export default function LoginScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
             >
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                    contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
 
                     {/* Header: KINETIC */}
                     <View style={styles.header}>

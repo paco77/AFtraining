@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, StatusBar, Modal } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Calendar, ChevronDown, ChevronUp, Scale, Camera } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '@/constants/theme';
 import api from '@/services/api';
 import { useUser } from '@/context/UserContext';
@@ -9,6 +10,7 @@ import { useUser } from '@/context/UserContext';
 export default function ClientEvaluations() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { clients } = useUser();
     const client = clients.find(c => String(c.id) === String(id));
 
@@ -156,7 +158,7 @@ export default function ClientEvaluations() {
                                                             activeOpacity={0.8}
                                                         >
                                                             <Image source={{ uri: photo.url }} style={styles.photoImage} />
-                                                            <View style={styles.photoLabelOverlay}>
+                                                            <View style={[styles.photoLabelOverlay, { paddingBottom: Math.max(4, insets.bottom) }]}>
                                                                 <Text style={styles.photoLabelText}>{photo.label}</Text>
                                                             </View>
                                                         </TouchableOpacity>

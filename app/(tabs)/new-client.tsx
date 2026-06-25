@@ -7,6 +7,8 @@ import {
     ArrowLeft,
     Camera,
     Check,
+    Eye,
+    EyeOff,
     Lock,
     User,
     Watch
@@ -25,9 +27,11 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function NewClientScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { addClient, currentUser } = useUser();
 
     // Personal Data
@@ -42,6 +46,7 @@ export default function NewClientScreen() {
     // Credentials
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     // Photos (simulated)
     const [photos, setPhotos] = useState({
@@ -75,8 +80,15 @@ export default function NewClientScreen() {
             await addClient(clientData as any, photos);
             showToast.success('Cliente registrado correctamente');
             router.back();
-        } catch (error) {
-            showToast.error('No se pudo registrar al cliente');
+        } catch (error: any) {
+            console.log('Error al registrar cliente:', error.response?.data || error.message);
+            if (error.response?.data?.errors) {
+                const firstError: any = Object.values(error.response.data.errors)[0];
+                Alert.alert('Error de validación', Array.isArray(firstError) ? firstError[0] : firstError);
+            } else {
+                const errorMsg = error.response?.data?.message || 'No se pudo registrar al cliente';
+                Alert.alert('Error', errorMsg);
+            }
         } finally {
             setIsSaving(false);
         }
@@ -160,7 +172,7 @@ export default function NewClientScreen() {
             </View>
 
             <ScrollView
-                contentContainerStyle={styles.scroll}
+                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(styles.scroll.paddingBottom || 0, insets.bottom + 20) }]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
@@ -293,14 +305,27 @@ export default function NewClientScreen() {
                         onChangeText={setUsername}
                     />
 
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Contraseña"
-                        secureTextEntry
-                        placeholderTextColor={Colors.textMuted}
-                        value={password}
-                        onChangeText={setPassword}
-                    />
+                    <View style={styles.passwordContainer}>
+                        <TextInput
+                            style={styles.passwordInput}
+                            placeholder="Contraseña (8 caracteres)"
+                            secureTextEntry={!showPassword}
+                            placeholderTextColor={Colors.textMuted}
+                            value={password}
+                            onChangeText={setPassword}
+                        />
+                        <TouchableOpacity
+                            onPress={() => setShowPassword(!showPassword)}
+                            style={styles.eyeIcon}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            {showPassword ? (
+                                <EyeOff size={20} color={Colors.textMuted} />
+                            ) : (
+                                <Eye size={20} color={Colors.textMuted} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 <TouchableOpacity
@@ -386,6 +411,25 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         borderWidth: 1,
         borderColor: 'transparent',
+    },
+    passwordContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.surfaceLight,
+        borderRadius: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+    passwordInput: {
+        flex: 1,
+        color: Colors.text,
+        fontSize: 15,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+    },
+    eyeIcon: {
+        padding: 14,
     },
     row: {
         flexDirection: 'row',

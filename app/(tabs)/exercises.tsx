@@ -17,6 +17,7 @@ import {
     Sparkles,
     Trash2,
     X,
+    Edit2,
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -96,7 +97,7 @@ const MuscleTag = ({ name, accent }: { name: string; accent?: boolean }) => (
 
 // ─── Exercise Card Component ──────────────────────────────────────────────────
 
-const ExerciseCard = ({ exercise, onDelete }: { exercise: Exercise; onDelete?: (id: string) => void }) => {
+const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDelete?: (id: string) => void; onEdit?: (exercise: Exercise) => void }) => {
     const [expanded, setExpanded] = useState(false);
     const groupColor = MuscleGroupColors[exercise.muscleGroup] || Colors.primary;
 
@@ -122,22 +123,34 @@ const ExerciseCard = ({ exercise, onDelete }: { exercise: Exercise; onDelete?: (
                     </View>
                 </View>
                 <View style={styles.cardHeaderRight}>
-                    {exercise.isCustom && onDelete && (
-                        <TouchableOpacity
-                            style={styles.deleteExBtn}
-                            onPress={() => {
-                                Alert.alert(
-                                    'Eliminar ejercicio',
-                                    `¿Estás seguro de eliminar "${exercise.name}"?`,
-                                    [
-                                        { text: 'Cancelar', style: 'cancel' },
-                                        { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(exercise.id) },
-                                    ],
-                                );
-                            }}
-                        >
-                            <Trash2 size={14} color={Colors.danger} />
-                        </TouchableOpacity>
+                    {exercise.isCustom && (
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            {onEdit && (
+                                <TouchableOpacity
+                                    style={styles.deleteExBtn}
+                                    onPress={() => onEdit(exercise)}
+                                >
+                                    <Edit2 size={14} color={Colors.textMuted} />
+                                </TouchableOpacity>
+                            )}
+                            {onDelete && (
+                                <TouchableOpacity
+                                    style={styles.deleteExBtn}
+                                    onPress={() => {
+                                        Alert.alert(
+                                            'Eliminar ejercicio',
+                                            `¿Estás seguro de eliminar "${exercise.name}"?`,
+                                            [
+                                                { text: 'Cancelar', style: 'cancel' },
+                                                { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(exercise.id) },
+                                            ],
+                                        );
+                                    }}
+                                >
+                                    <Trash2 size={14} color={Colors.danger} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     )}
                     <LevelBadge level={exercise.level} />
                     {expanded ? (
@@ -207,9 +220,10 @@ interface AddExerciseFormProps {
     visible: boolean;
     onClose: () => void;
     onAdd: (exercise: Exercise) => Promise<void>;
+    initialData?: Exercise | null;
 }
 
-const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
+const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFormProps) => {
     const [name, setName] = useState('');
     const [equipment, setEquipment] = useState('');
     const [description, setDescription] = useState('');
@@ -222,10 +236,25 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        if (muscleGroups.length > 0 && !muscleGroups.includes(selectedGroup)) {
+        if (visible && initialData) {
+            setName(initialData.name);
+            setEquipment(initialData.equipment);
+            setDescription(initialData.description);
+            setPrimaryMuscles(initialData.primaryMuscles.join(', '));
+            setSecondaryMuscles(initialData.secondaryMuscles.join(', '));
+            setBenefits(initialData.benefits.join(', '));
+            setSelectedGroup(initialData.muscleGroup);
+            setSelectedLevel(initialData.level);
+        } else if (!visible) {
+            resetForm();
+        }
+    }, [visible, initialData]);
+
+    useEffect(() => {
+        if (muscleGroups.length > 0 && !muscleGroups.includes(selectedGroup) && !initialData) {
             setSelectedGroup(muscleGroups[0]);
         }
-    }, [muscleGroups, selectedGroup]);
+    }, [muscleGroups, selectedGroup, initialData]);
 
     const resetForm = () => {
         setName('');
@@ -234,7 +263,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
         setPrimaryMuscles('');
         setSecondaryMuscles('');
         setBenefits('');
-        setSelectedGroup('Pecho');
+        setSelectedGroup(muscleGroups[0] || 'Pecho');
         setSelectedLevel('Principiante');
     };
 
@@ -245,7 +274,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
         }
 
         const newExercise: Exercise = {
-            id: `custom-${Date.now()}`,
+            id: initialData ? initialData.id : `custom-${Date.now()}`,
             name: name.trim(),
             muscleGroup: selectedGroup,
             equipment: equipment.trim(),
@@ -289,7 +318,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
                     <View style={styles.modalHeader}>
                         <View style={styles.modalTitleRow}>
                             <Sparkles size={20} color={Colors.primary} />
-                            <Text style={styles.modalTitle}>Nuevo Ejercicio</Text>
+                            <Text style={styles.modalTitle}>{initialData ? 'Editar Ejercicio' : 'Nuevo Ejercicio'}</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.modalCloseBtn}
@@ -432,8 +461,8 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
                                 <ActivityIndicator color="#000" />
                             ) : (
                                 <>
-                                    <Plus size={18} color="#000" />
-                                    <Text style={styles.submitButtonText}>Agregar Ejercicio</Text>
+                                    {!initialData && <Plus size={18} color="#000" />}
+                                    <Text style={styles.submitButtonText}>{initialData ? 'Guardar Cambios' : 'Agregar Ejercicio'}</Text>
                                 </>
                             )}
                         </TouchableOpacity>
@@ -450,10 +479,11 @@ const AddExerciseForm = ({ visible, onClose, onAdd }: AddExerciseFormProps) => {
 
 export default function ExerciseScreen() {
     const { colors } = useTheme();
-    const { allExercises, muscleGroups, refreshMetadata } = usePlans();
+    const { allExercises, muscleGroups, refreshMetadata, addExercise, updateExercise } = usePlans();
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<FilterOption>('Todos');
     const [showAddForm, setShowAddForm] = useState(false);
+    const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
     const handleRefresh = useCallback(async () => {
@@ -539,7 +569,7 @@ export default function ExerciseScreen() {
     }, []);
 
     const renderExercise = useCallback(
-        ({ item }: { item: Exercise }) => <ExerciseCard exercise={item} onDelete={handleDeleteExercise} />,
+        ({ item }: { item: Exercise }) => <ExerciseCard exercise={item} onDelete={handleDeleteExercise} onEdit={(ex) => setEditingExercise(ex)} />,
         [handleDeleteExercise],
     );
 
@@ -659,11 +689,23 @@ export default function ExerciseScreen() {
                 <Plus size={24} color="#000" />
             </TouchableOpacity>
 
-            {/* Add Exercise Form Modal */}
+            {/* Add/Edit Exercise Form Modal */}
             <AddExerciseForm
-                visible={showAddForm}
-                onClose={() => setShowAddForm(false)}
-                onAdd={handleAddExercise}
+                visible={showAddForm || !!editingExercise}
+                onClose={() => {
+                    setShowAddForm(false);
+                    setEditingExercise(null);
+                }}
+                initialData={editingExercise}
+                onAdd={async (exercise) => {
+                    if (editingExercise) {
+                        await updateExercise(editingExercise.id, exercise);
+                    } else {
+                        await addExercise(exercise);
+                    }
+                    setEditingExercise(null);
+                    setShowAddForm(false);
+                }}
             />
         </View>
     );

@@ -44,6 +44,8 @@ export default function ProfileScreen() {
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
 
+    const isCoach = currentUser?.role === 'coach';
+
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
         try {
@@ -101,7 +103,7 @@ export default function ProfileScreen() {
         );
     }
 
-    const isCoach = currentUser.role === 'coach';
+
 
     const [progressHistory, setProgressHistory] = useState<any[]>([]);
     const [isLoadingProgress, setIsLoadingProgress] = useState(false);
