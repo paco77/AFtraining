@@ -331,13 +331,6 @@ export default function HomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.stepsLabelNew}>PASOS DIARIOS</Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.stepsTargetNew}>META: 10,000</Text>
-                <Text style={styles.stepsPercentNew}>72%</Text>
-              </View>
-            </View>
-            <View style={styles.progressShellNew}>
-              <View style={[styles.progressCoreNew, { width: '72%' }]} />
             </View>
           </TouchableOpacity>
 

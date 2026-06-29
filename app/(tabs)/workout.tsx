@@ -6,11 +6,47 @@ import { useUser } from '@/context/UserContext';
 import RestTimerModal from '@/components/RestTimerModal';
 import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility, CloudAlert } from 'lucide-react-native';
+import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility, CloudAlert, Timer } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const SessionTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: number | null, durationRef?: React.MutableRefObject<number> }) => {
+    const [elapsed, setElapsed] = useState(0);
+    const [isRunning, setIsRunning] = useState(false);
+
+    useEffect(() => {
+        if (!isRunning) return;
+        const int = setInterval(() => {
+            setElapsed(prev => {
+                const next = prev + 1;
+                if (durationRef) durationRef.current = next;
+                return next;
+            });
+        }, 1000);
+        return () => clearInterval(int);
+    }, [isRunning, durationRef]);
+
+    if (!sessionStartTime) return null;
+
+    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    const h = Math.floor(elapsed / 3600);
+
+    return (
+        <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isRunning ? 'rgba(204,255,0,0.15)' : 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 8 }}
+            onPress={() => setIsRunning(!isRunning)}
+            activeOpacity={0.7}
+        >
+            <Timer size={16} color={isRunning ? "#CCFF00" : "#F8FAFC"} style={{ marginRight: 6 }} />
+            <Text style={{ color: isRunning ? '#CCFF00' : '#F8FAFC', fontSize: 13, fontWeight: '700', fontFamily: Fonts.headline }}>
+                {h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`}
+            </Text>
+        </TouchableOpacity>
+    );
+};
 
 export default function WorkoutScreen() {
     const router = useRouter();
@@ -32,7 +68,9 @@ export default function WorkoutScreen() {
         saveLog,
         updatePlan,
         pendingOfflineLogs,
-        syncOfflineLogs
+        syncOfflineLogs,
+        sessionStartTime,
+        fetchPlans
     } = usePlans();
     const { currentUser } = useUser();
     const [selectedDayIdx, setSelectedDayIdx] = useState(0);
@@ -41,6 +79,7 @@ export default function WorkoutScreen() {
     const [restTimes, setRestTimes] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const sessionDurationRef = React.useRef(0);
 
     // Grouping state
     const [isGroupingMode, setIsGroupingMode] = useState(false);
@@ -84,7 +123,6 @@ export default function WorkoutScreen() {
         try {
             if (activePlan) {
                 // To refresh plans, we could call fetchPlans if available
-                const fetchPlans = usePlans().fetchPlans;
                 if (fetchPlans) await fetchPlans();
             }
         } finally {
@@ -101,7 +139,7 @@ export default function WorkoutScreen() {
             const initialLogs: Record<string, SetLog[]> = {};
             currentDay.exercises.forEach(ex => {
                 const exId = String(ex.id || ex.exercise.id);
-                initialLogs[exId] = Array(Number(ex.sets) || 1).fill(null).map(() => ({ reps: 0, weight: 0, weightLb: 0 }));
+                initialLogs[exId] = Array(Number(ex.sets) || 1).fill(null).map(() => ({ reps: '', weight: '', weightLb: '' }));
             });
             startWorkoutSession(activePlan.id, currentDay.dayNumber, initialLogs);
         }
@@ -110,11 +148,11 @@ export default function WorkoutScreen() {
     const handleUpdateSet = (exerciseId: string, setIndex: number, field: keyof SetLog, value: string) => {
         // Permitir que el usuario ingrese comas como decimales y mantener el punto mientras teclea
         const cleanValue = value.replace(',', '.');
-        
+
         setSessionLogs(prev => {
             const exerciseLogs = [...(prev[exerciseId] || [])];
             const newLog = { ...exerciseLogs[setIndex], [field]: cleanValue };
-            
+
             if (field === 'weight') {
                 const numValue = parseFloat(cleanValue) || 0;
                 newLog.weightLb = cleanValue === '' ? '' : numValue > 0 ? parseFloat((numValue * 2.20462).toFixed(2)) : 0;
@@ -122,7 +160,7 @@ export default function WorkoutScreen() {
                 const numValue = parseFloat(cleanValue) || 0;
                 newLog.weight = cleanValue === '' ? '' : numValue > 0 ? parseFloat((numValue / 2.20462).toFixed(2)) : 0;
             }
-            
+
             exerciseLogs[setIndex] = newLog;
             return { ...prev, [exerciseId]: exerciseLogs };
         });
@@ -134,34 +172,24 @@ export default function WorkoutScreen() {
         try {
             const exercises: ExerciseLog[] = Object.entries(sessionLogs).map(([exId, sets]) => ({
                 exerciseId: exId,
-                setLogs: sets
+                setLogs: sets.map(s => ({
+                    ...s,
+                    reps: Number(s.reps) || 0,
+                    weight: Number(s.weight) || 0,
+                    weightLb: Number(s.weightLb) || 0
+                }))
             }));
 
-            // Validamos si todos los sets planificados de cada ejercicio del día fueron marcados como completados
-            const currentDay = activePlan.days.find(d => d.dayNumber === activeSessionDay);
-            const isSessionCompleted = currentDay ? currentDay.exercises.every(ex => {
-                const exId = String(ex.id || ex.exercise.id);
-                const logs = sessionLogs[exId] || [];
-                const targetSets = Math.max(Number(ex.sets) || 0, logs.length);
-                for (let idx = 0; idx < targetSets; idx++) {
-                    if (!completedSets[`${exId}-${idx}`]) {
-                        return false;
-                    }
-                }
-                return true;
-            }) : true;
-
-            const finalComment = isSessionCompleted 
-                ? comment 
-                : (comment ? `SESIÓN NO TERMINADA - ${comment}` : 'SESIÓN NO TERMINADA');
+            const durationMinutes = sessionStartTime ? Math.max(1, Math.floor((Date.now() - sessionStartTime) / 60000)) : undefined;
 
             const dayLog = {
                 dayNumber: activeSessionDay,
                 sessions: [{
                     sessionNumber: 1,
                     date: new Date().toISOString(),
+                    duration: durationMinutes,
                     exercises: exercises,
-                    comment: finalComment
+                    comment: comment
                 }]
             };
 
@@ -176,7 +204,7 @@ export default function WorkoutScreen() {
         if (!activePlan || activeSessionDay === null) return;
 
         // Validation: at least one set logged?
-        const hasLogs = Object.values(sessionLogs).some(sets => sets.some(s => s.reps > 0 || s.weight > 0));
+        const hasLogs = Object.values(sessionLogs).some(sets => sets.some(s => Number(s.reps) > 0 || Number(s.weight) > 0));
 
         if (!hasLogs) {
             Alert.alert(
@@ -295,7 +323,7 @@ export default function WorkoutScreen() {
                      <Text style={styles.exerciseTitleDark}>{item.exercise.name}</Text>
                      <Text style={styles.exerciseSubtitleDark}>ENFOQUE: {(item.exercise.muscleGroup || 'CUÁDRICEPS Y GLÚTEOS').toUpperCase()}</Text>
                      <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 4, fontWeight: '500' }}>
-                        {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${item.instruction}` : ''}
+                        {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${ item.instruction }` : ''}
                      </Text>
                    </View>
                    <View style={{ alignItems: 'center', marginLeft: 10 }}>
@@ -324,15 +352,15 @@ export default function WorkoutScreen() {
 
                 {logs.map((log, idx) => {
                     const actualIdx = idx;
-                    const isCompleted = completedSets[`${exerciseId}-${actualIdx}`];
+                    const isCompleted = completedSets[`${ exerciseId } -${ actualIdx } `];
                     return (
-                        <View key={`effective-${idx}`} style={[styles.setRowDark, isCompleted && styles.setRowCompleted]}>
+                        <View key={`effective - ${ idx } `} style={[styles.setRowDark, isCompleted && styles.setRowCompleted]}>
                            <Text style={[styles.setNumberTextDark, isCompleted && { color: Colors.primary }]}>{actualIdx + 1}</Text>
                            <View style={styles.inputGroupDark}>
                               <Text style={styles.inputLabelDark}>peso (KG)</Text>
                               <TextInput
                                   style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.weight !== undefined && log.weight !== null ? String(log.weight) : ''}
+                                  value={log.weight !== undefined && log.weight !== null && log.weight !== '' ? String(log.weight) : ''}
                                   keyboardType="decimal-pad"
                                   onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weight', val)}
                                   placeholder="--"
@@ -343,7 +371,7 @@ export default function WorkoutScreen() {
                               <Text style={styles.inputLabelDark}>peso (LB)</Text>
                               <TextInput
                                   style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.weightLb !== undefined && log.weightLb !== null ? String(log.weightLb) : ''}
+                                  value={log.weightLb !== undefined && log.weightLb !== null && log.weightLb !== '' ? String(log.weightLb) : ''}
                                   keyboardType="decimal-pad"
                                   onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weightLb', val)}
                                   placeholder="--"
@@ -354,7 +382,7 @@ export default function WorkoutScreen() {
                               <Text style={styles.inputLabelDark}>reps</Text>
                               <TextInput
                                   style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.reps !== undefined && log.reps !== null ? String(log.reps) : ''}
+                                  value={log.reps !== undefined && log.reps !== null && log.reps !== '' ? String(log.reps) : ''}
                                   keyboardType="decimal-pad"
                                   onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'reps', val)}
                                   placeholder="--"
@@ -364,7 +392,7 @@ export default function WorkoutScreen() {
                            <TouchableOpacity 
                               style={[styles.checkBtnDark, isCompleted && styles.checkBtnCompleted]}
                               onPress={() => {
-                                  const key = `${exerciseId}-${actualIdx}`;
+                                  const key = `${ exerciseId } -${ actualIdx } `;
                                   setCompletedSets(prev => {
                                       const nextStatus = !prev[key];
                                       if (nextStatus) {
@@ -387,7 +415,7 @@ export default function WorkoutScreen() {
                     onPress={() => {
                         setSessionLogs(prev => {
                             const current = prev[exerciseId] || [];
-                            return { ...prev, [exerciseId]: [...current, { reps: 0, weight: 0, weightLb: 0 }] };
+                            return { ...prev, [exerciseId]: [...current, { reps: '', weight: '', weightLb: '' }] };
                         });
                     }}
                 >
@@ -530,7 +558,7 @@ export default function WorkoutScreen() {
                                         }
 
                                         if (arr.length > 0 && !base.includes('—') && !base.includes('(')) {
-                                            base += ` (${arr.join(', ')})`;
+                                            base += ` (${ arr.join(', ') })`;
                                         }
                                         return base;
                                     })()}
@@ -584,12 +612,14 @@ export default function WorkoutScreen() {
                                 arr = Array.from(muscles);
                             }
                             if (arr.length > 0) {
-                                base += ` (${arr.join(', ')})`;
+                                base += ` (${ arr.join(', ') })`;
                             }
                         }
                         return base;
                     })()}
                 </Text>
+                
+                <SessionTimer sessionStartTime={sessionStartTime} durationRef={sessionDurationRef} />
                 
                 {pendingOfflineLogs > 0 && (
                     <TouchableOpacity 

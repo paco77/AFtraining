@@ -1,9 +1,9 @@
-import { Colors, Fonts, Spacing, borderRadius } from '@/constants/theme';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Zap } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Svg, { Circle, Defs, DropShadow, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_SIZE = width * 0.65;
@@ -89,7 +89,7 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
                                     <Stop offset="100%" stopColor={Colors.primary} stopOpacity="0" />
                                 </RadialGradient>
                             </Defs>
-                            
+
                             {/* Track Background */}
                             <Circle
                                 cx={CIRCLE_SIZE / 2}
@@ -136,7 +136,7 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
 
                     {/* Action Buttons */}
                     <View style={styles.actionsContainer}>
-                        <TouchableOpacity activeOpacity={0.8} onPress={togglePause} style={{width: '100%', marginBottom: 12}}>
+                        <TouchableOpacity activeOpacity={0.8} onPress={togglePause} style={{ width: '100%', marginBottom: 12 }}>
                             <LinearGradient
                                 colors={['#5DA6FF', '#8364CE']}
                                 start={{ x: 0, y: 0 }}
@@ -160,7 +160,6 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
                             <Zap size={14} color={Colors.tertiary} />
                             <Text style={styles.footerTextPrimary}>RECUPERACIÓN ÓPTIMA</Text>
                         </View>
-                        <Text style={styles.footerTextBrand}>KINETIC AI</Text>
                     </View>
                 </View>
             </View>

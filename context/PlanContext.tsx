@@ -33,6 +33,7 @@ interface PlanContextType {
     setCompletedSets: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     comment: string;
     setComment: React.Dispatch<React.SetStateAction<string>>;
+    sessionStartTime: number | null;
     startWorkoutSession: (planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => void;
     finishWorkoutSession: () => void;
     discardWorkoutSession: () => void;
@@ -62,6 +63,7 @@ const PlanContext = createContext<PlanContextType>({
     setCompletedSets: () => { },
     comment: '',
     setComment: () => { },
+    sessionStartTime: null,
     startWorkoutSession: () => { },
     finishWorkoutSession: () => { },
     discardWorkoutSession: () => { },
@@ -388,7 +390,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             payload = {
                 training_day_id: day.id,
                 start_time: log.sessions[0]?.date,
-                end_time: log.sessions[0]?.date,
+                end_time: log.sessions[0]?.duration 
+                    ? new Date(new Date(log.sessions[0]?.date).getTime() + log.sessions[0].duration * 60000).toISOString()
+                    : log.sessions[0]?.date,
+                duration: log.sessions[0]?.duration,
                 comments: log.sessions[0]?.comment || '',
                 exercises: log.sessions[0]?.exercises
                     .map(exLog => ({
@@ -496,6 +501,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     const [sessionLogs, setSessionLogs] = useState<Record<string, SetLog[]>>({});
     const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
     const [comment, setComment] = useState('');
+    const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
     const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null>(null);
     const [pendingOfflineLogs, setPendingOfflineLogs] = useState<number>(0);
 
@@ -539,6 +545,9 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                     setSessionLogs(parsed.sessionLogs || {});
                     setCompletedSets(parsed.completedSets || {});
                     setComment(parsed.comment || '');
+                    if (parsed.sessionStartTime) {
+                        setSessionStartTime(parsed.sessionStartTime);
+                    }
                     
                     import('react-native').then(({ Alert }) => {
                         Alert.alert(
@@ -576,11 +585,12 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 dayNumber: activeSessionDay,
                 sessionLogs,
                 completedSets,
-                comment
+                comment,
+                sessionStartTime
             };
             AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(dataToSave)).catch(console.error);
         }
-    }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment, currentUser]);
+    }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment, sessionStartTime, currentUser]);
 
     const startWorkoutSession = useCallback((planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => {
         setActivePlanId(planId);
@@ -588,6 +598,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         setSessionLogs(initialLogs);
         setCompletedSets({});
         setComment('');
+        setSessionStartTime(Date.now());
         showToast.info(`Sesión iniciada: Día ${dayNumber}`);
     }, []);
 
@@ -597,6 +608,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         setSessionLogs({});
         setCompletedSets({});
         setComment('');
+        setSessionStartTime(null);
         await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
         showToast.success('Sesión finalizada');
     }, []);
@@ -607,6 +619,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         setSessionLogs({});
         setCompletedSets({});
         setComment('');
+        setSessionStartTime(null);
         await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
         showToast.info('Sesión descartada');
     }, []);
@@ -627,6 +640,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             setCompletedSets,
             comment,
             setComment,
+            sessionStartTime,
             startWorkoutSession,
             finishWorkoutSession,
             discardWorkoutSession,

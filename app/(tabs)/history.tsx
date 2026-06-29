@@ -1,11 +1,11 @@
 import { Spacing, borderRadius, Fonts, Colors } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, ScrollView, Platform, SafeAreaView } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, ScrollView, Platform, SafeAreaView, RefreshControl } from 'react-native';
 import { Calendar, ChevronRight, ClipboardList, Dumbbell, Clock, TrendingUp, Plus, Medal } from 'lucide-react-native';
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 export default function HistoryScreen() {
     const { colors } = useTheme();
@@ -14,14 +14,26 @@ export default function HistoryScreen() {
 
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     
     // Calendar strip dates (past 14 days + today)
     const [dates, setDates] = useState<Date[]>([]);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
     useEffect(() => {
-        loadHistory();
         initDates();
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadHistory();
+        }, [])
+    );
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await loadHistory();
+        setRefreshing(false);
     }, []);
 
     const initDates = () => {
@@ -39,9 +51,15 @@ export default function HistoryScreen() {
         try {
             setLoading(true);
             const data = await fetchHistory();
+            console.log('--- FETCHED HISTORY ---, count:', data?.length);
             // sort descending
-            data.sort((a,b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-            setSessions(data);
+            if (Array.isArray(data)) {
+                data.sort((a,b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+                setSessions(data);
+            } else {
+                console.warn('History data is not an array:', data);
+                setSessions([]);
+            }
         } catch (error) {
             console.error('Error loading history:', error);
         } finally {
@@ -146,19 +164,26 @@ export default function HistoryScreen() {
     };
 
     const calculateVolumeMock = (session: any) => {
-        // Mocking volume calculation for UI presence
         let vol = 0;
+        let hasLogs = false;
         if(session.exercise_logs) {
             session.exercise_logs.forEach((ex: any) => {
                 ex.sets?.forEach((set: any) => {
-                    vol += (set.reps || 10) * (set.weight || 20);
+                    hasLogs = true;
+                    vol += (set.reps || 0) * (set.weight || 0);
                 });
             });
         }
-        return vol > 0 ? `${vol.toLocaleString()} kg` : '3,820 kg'; 
+        return hasLogs ? `${vol.toLocaleString()} kg` : '0 kg'; 
     };
 
     const calculateDurationMock = (session: any) => {
+        if (session.duration_minutes != null) return `${session.duration_minutes} min`;
+        if (session.duration != null) return `${session.duration} min`;
+        if (session.end_time && session.start_time) {
+             const diff = new Date(session.end_time).getTime() - new Date(session.start_time).getTime();
+             return `${Math.max(1, Math.round(diff / 60000))} min`;
+        }
         const logLen = session.exercise_logs?.length || 1;
         return `${logLen * 12} min`; 
     };
@@ -192,7 +217,7 @@ export default function HistoryScreen() {
                             <Clock size={16} color={colors.primary} />
                         </View>
                         <View>
-                            <Text style={styles.metricLabel}>DURACIÓN</Text>
+                            <Text style={styles.metricLabel}>TIEMPO</Text>
                             <Text style={styles.metricValue}>{duration}</Text>
                         </View>
                     </View>
@@ -211,6 +236,14 @@ export default function HistoryScreen() {
                     <Text style={styles.exercCountText}>{exercisesCount} ejercicios completados</Text>
                     <ChevronRight size={16} color={colors.textMuted} />
                 </View>
+
+                {item.comment ? (
+                    <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 13, color: colors.textMuted, fontStyle: 'italic' }}>
+                            "{item.comment}"
+                        </Text>
+                    </View>
+                ) : null}
             </View>
         );
     };
@@ -246,6 +279,9 @@ export default function HistoryScreen() {
                 <FlatList
                     data={sessions}
                     keyExtractor={(item, index) => item.id ? String(item.id) : `${index}`}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                    }
                     ListHeaderComponent={
                         <View>
                             {renderSummaryHeader()}

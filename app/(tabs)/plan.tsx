@@ -414,9 +414,16 @@ const PlanCard = ({
                                                                     <Text style={styles.sessionHistoryLabel}>
                                                                         Sesión {session.sessionNumber}
                                                                     </Text>
-                                                                    <Text style={styles.sessionHistoryDate}>
-                                                                        {formatSessionDate(session.date)}
-                                                                    </Text>
+                                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                                        <Text style={styles.sessionHistoryDate}>
+                                                                            {formatSessionDate(session.date)}
+                                                                        </Text>
+                                                                        {session.duration != null && (
+                                                                            <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '700' }}>
+                                                                                • {session.duration} min
+                                                                            </Text>
+                                                                        )}
+                                                                    </View>
                                                                     {session.comment && (
                                                                         <Text style={styles.sessionHistoryComment} numberOfLines={1}>
                                                                             "{session.comment}"

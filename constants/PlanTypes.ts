@@ -32,6 +32,7 @@ export interface ExerciseLog {
 export interface SessionLog {
     sessionNumber: number;
     date: string;       // ISO date string
+    duration?: number;  // duration in minutes
     exercises: ExerciseLog[];
     comment?: string;
 }
