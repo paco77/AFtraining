@@ -4,27 +4,17 @@ import Storage from './storage';
 
 // Nota: 10.0.2.2 es el host para el emulador de Android. 
 // Para dispositivos físicos, usa tu IP local (ej: http://192.168.1.XX:8000/api)
-const getBaseUrl = () => {
+export const getBaseUrl = () => {
     // Si la app está compilada para producción, se conecta directamente al servidor oficial
     if (!__DEV__) {
         return 'https://aftraining.skecomponent.mx/api/';
     }
 
-    // Definimos la IP local de tu máquina para que funcione en emuladores y dispositivos físicos en desarrollo
-    const localIp = '192.168.68.116';
-
-    if (Platform.OS === 'android') {
-        // En Android, 10.0.2.2 es el alias para localhost, pero para dispositivos físicos usamos la IP real
-        return `http://${localIp}:8000/api/`;
-    }
-    if (Platform.OS === 'web') {
-        const origin = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        // Si el origen ya es una IP o estamos en producción, podríamos usarlo, 
-        // pero para desarrollo local usamos la IP de la API
-        return `http://${localIp}:8000/api/`;
-    }
-    return `http://${localIp}:8000/api/`;
+    // Para probar directamente en tu servidor local
+    return 'https://aftraining.skecomponent.mx/api/';
 };
+
+export const API_HOST = getBaseUrl().replace('/api/', '');
 
 const api = axios.create({
     baseURL: getBaseUrl(),

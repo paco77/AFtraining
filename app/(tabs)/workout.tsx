@@ -1,15 +1,18 @@
-import { ExerciseLog, PlannedExercise, SetLog, MONTHS } from '@/constants/PlanTypes';
-import { Colors, Fonts, borderRadius, Spacing } from '@/constants/theme';
+import RestTimerModal from '@/components/RestTimerModal';
+import { ExerciseLog, MONTHS, PlannedExercise, SetLog } from '@/constants/PlanTypes';
+import { borderRadius, Colors, Fonts, Spacing } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
-import RestTimerModal from '@/components/RestTimerModal';
+import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
-import { LinearGradient } from 'expo-linear-gradient';
-import { CalendarDays, Dumbbell, Heart, Info, Plus, ArrowLeft, MoreVertical, Check, CheckCheck, Accessibility, CloudAlert, Timer } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { ArrowLeft, CalendarDays, Check, CheckCheck, ChevronDown, ChevronUp, CloudAlert, Dumbbell, MoreVertical, Plus, Timer } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Video, ResizeMode } from 'expo-av';
+import { ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal } from 'react-native';
+const SCREEN_WIDTH = Dimensions.get('window').width;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SessionTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: number | null, durationRef?: React.MutableRefObject<number> }) => {
@@ -35,7 +38,7 @@ const SessionTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: num
     const h = Math.floor(elapsed / 3600);
 
     return (
-        <TouchableOpacity 
+        <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isRunning ? 'rgba(204,255,0,0.15)' : 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 8 }}
             onPress={() => setIsRunning(!isRunning)}
             activeOpacity={0.7}
@@ -45,6 +48,72 @@ const SessionTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: num
                 {h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`}
             </Text>
         </TouchableOpacity>
+    );
+};
+
+const RecentSessionCard = ({ session, currentDay }: { session: any, currentDay: any }) => {
+    const [expanded, setExpanded] = useState(false);
+
+    if (!session) return null;
+
+    const dateStr = new Date(session.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+    const durationStr = session.duration ? `${session.duration} min` : '';
+
+    return (
+        <View style={{ marginHorizontal: 20, marginTop: 20, marginBottom: 10, borderRadius: 16, backgroundColor: Colors.surface, overflow: 'hidden' }}>
+            <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setExpanded(!expanded)}
+                style={{ padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary_container, justifyContent: 'center', alignItems: 'center' }}>
+                        <Timer size={20} color={Colors.primary} />
+                    </View>
+                    <View>
+                        <Text style={{ fontFamily: Fonts.headline, fontSize: 16, fontWeight: '700', color: '#FFF' }}>
+                            Sesión Anterior
+                        </Text>
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 13, color: Colors.textMuted }}>
+                            {dateStr} {durationStr ? ` • ${durationStr}` : ''}
+                        </Text>
+                    </View>
+                </View>
+                {expanded ? <ChevronUp size={24} color={Colors.textMuted} /> : <ChevronDown size={24} color={Colors.textMuted} />}
+            </TouchableOpacity>
+
+            {expanded && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                    {session.comment && (
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 13, color: '#A0AEC0', fontStyle: 'italic', marginBottom: 12 }}>
+                            "{session.comment}"
+                        </Text>
+                    )}
+                    {session.exercises?.map((exLog: any, idx: number) => {
+                        const plannedExercise = currentDay?.exercises?.find((e: any) => String(e.id) === String(exLog.exerciseId));
+                        const exerciseDef = plannedExercise?.exercise;
+                        const exName = exerciseDef?.name || 'Ejercicio Desconocido';
+                        return (
+                            <View key={idx} style={{ marginBottom: 12 }}>
+                                <Text style={{ fontFamily: Fonts.headline, fontSize: 14, fontWeight: '600', color: Colors.secondary, marginBottom: 4 }}>
+                                    {exName}
+                                </Text>
+                                <View style={{ backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 8 }}>
+                                    {exLog.setLogs?.map((set: any, sIdx: number) => (
+                                        <View key={sIdx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 }}>
+                                            <Text style={{ fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted }}>Serie {sIdx + 1}</Text>
+                                            <Text style={{ fontFamily: Fonts.body, fontSize: 12, color: '#FFF', fontWeight: '500' }}>
+                                                {set.weight} {exerciseDef?.equipment === 'Body Weight' ? '' : 'kg'} × {set.reps} reps
+                                            </Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </View>
+                        );
+                    })}
+                </View>
+            )}
+        </View>
     );
 };
 
@@ -70,16 +139,21 @@ export default function WorkoutScreen() {
         pendingOfflineLogs,
         syncOfflineLogs,
         sessionStartTime,
-        fetchPlans
+        fetchPlans,
+        allExercises
     } = usePlans();
     const { currentUser } = useUser();
     const [selectedDayIdx, setSelectedDayIdx] = useState(0);
+    const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
     const [isTimerVisible, setTimerVisible] = useState(false);
     const [activeTimerSeconds, setActiveTimerSeconds] = useState(90);
     const [restTimes, setRestTimes] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [showRecentSessionModal, setShowRecentSessionModal] = useState(false);
+    const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
     const sessionDurationRef = React.useRef(0);
+    const exercisesListRef = React.useRef<FlatList>(null);
 
     // Grouping state
     const [isGroupingMode, setIsGroupingMode] = useState(false);
@@ -130,9 +204,45 @@ export default function WorkoutScreen() {
         }
     }, [activePlan]);
 
+    useEffect(() => {
+        if (exercisesListRef.current && currentDay?.exercises && currentDay.exercises.length > 0) {
+            exercisesListRef.current.scrollToIndex({
+                index: activeExerciseIndex,
+                animated: true
+            });
+        }
+    }, [activeExerciseIndex]);
+
     const currentDay = activePlan?.days[selectedDayIdx];
     const isSessionActive = activeSessionDay !== null;
     const isOnSessionDay = isSessionActive && activeSessionDay === currentDay?.dayNumber;
+
+    const recentSession = useMemo(() => {
+        if (!activePlan || !activePlan.logs || !activeSessionDay) return null;
+        const dayLog = activePlan.logs.find(l => l.dayNumber === activeSessionDay);
+        if (!dayLog || !dayLog.sessions || dayLog.sessions.length === 0) return null;
+        // Sort sessions by date descending
+        const sorted = [...dayLog.sessions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return sorted[0];
+    }, [activePlan, activeSessionDay]);
+
+    const getExerciseHistory = (exerciseId: string) => {
+        if (!activePlan || !activePlan.logs) return null;
+        
+        const allSessions: { date: string; exLog: any }[] = [];
+        activePlan.logs.forEach(dayLog => {
+            dayLog.sessions?.forEach(session => {
+                const exLog = session.exercises.find(e => String(e.exerciseId) === String(exerciseId));
+                if (exLog) {
+                    allSessions.push({ date: session.date, exLog });
+                }
+            });
+        });
+
+        if (allSessions.length === 0) return null;
+        allSessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return allSessions[0];
+    };
 
     const handleStartSession = () => {
         if (activePlan && currentDay) {
@@ -306,40 +416,67 @@ export default function WorkoutScreen() {
                 }
             } else {
                 currentGroup = null;
-                result.push({ isGroup: false, id: String(ex.id || ex.exercise.id), items: [ex] });
+                if (ex) result.push({ isGroup: false, id: String(ex.id || ex.exercise?.id), items: [ex] });
             }
         });
         return result;
     }, [currentDay]);
 
     const renderSingleExercise = (item: PlannedExercise, isInsideGroup: boolean = false) => {
-        const exerciseId = String(item.id || item.exercise.id);
+        if (!item) return null;
+        const exerciseId = String(item.id || item.exercise?.id);
         const logs = sessionLogs[exerciseId] || [];
+        const isHistoryExpanded = !!expandedHistory[exerciseId];
+        const exerciseHistory = getExerciseHistory(exerciseId);
+
+        // Fetch the full exercise from the library to ensure we have the videoUrl
+        const fullExerciseDef = allExercises.find(e => 
+            String(e.id) === String(item.exercise?.id) || 
+            (e.name && item.exercise?.name && e.name.toLowerCase() === item.exercise.name.toLowerCase())
+        );
+        const finalVideoUrl = item.exercise?.videoUrl || fullExerciseDef?.videoUrl;
 
         return (
             <View style={styles.exerciseContainerDark}>
+                {finalVideoUrl ? (
+                    finalVideoUrl.toLowerCase().includes('.mp4') ? (
+                        <Video
+                            source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                            style={{ width: '100%', height: 250, borderRadius: 16, marginBottom: 16, backgroundColor: '#0F172A' }}
+                            useNativeControls
+                            resizeMode={ResizeMode.CONTAIN}
+                            isLooping
+                        />
+                    ) : (
+                        <Image
+                            source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                            style={{ width: '100%', height: 250, borderRadius: 16, marginBottom: 16, backgroundColor: '#0F172A' }}
+                            contentFit="contain"
+                        />
+                    )
+                ) : null}
                 <View style={styles.exerciseTitleRowDark}>
-                   <View style={{ flex: 1 }}>
-                     <Text style={styles.exerciseTitleDark}>{item.exercise.name}</Text>
-                     <Text style={styles.exerciseSubtitleDark}>ENFOQUE: {(item.exercise.muscleGroup || 'CUÁDRICEPS Y GLÚTEOS').toUpperCase()}</Text>
-                     <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 4, fontWeight: '500' }}>
-                        {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${ item.instruction }` : ''}
-                     </Text>
-                   </View>
-                   <View style={{ alignItems: 'center', marginLeft: 10 }}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.exerciseTitleDark}>{item.exercise.name}</Text>
+                        <Text style={styles.exerciseSubtitleDark}>ENFOQUE: {(item.exercise.muscleGroup || 'CUÁDRICEPS Y GLÚTEOS').toUpperCase()}</Text>
+                        <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 4, fontWeight: '500' }}>
+                            {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${item.instruction}` : ''}
+                        </Text>
+                    </View>
+                    <View style={{ alignItems: 'center', marginLeft: 10 }}>
                         <Text style={{ color: Colors.textMuted, fontSize: 10, marginBottom: 4, fontWeight: '600' }}>Descanso (s)</Text>
                         <TextInput
-                            style={{ 
-                                backgroundColor: Colors.surface, 
-                                color: '#fff', 
-                                borderRadius: 6, 
-                                paddingHorizontal: 8, 
-                                paddingVertical: 4, 
-                                fontSize: 13, 
-                                width: 55, 
-                                textAlign: 'center', 
-                                borderWidth: 1, 
-                                borderColor: Colors.outline 
+                            style={{
+                                backgroundColor: Colors.surface,
+                                color: '#fff',
+                                borderRadius: 6,
+                                paddingHorizontal: 8,
+                                paddingVertical: 4,
+                                fontSize: 13,
+                                width: 55,
+                                textAlign: 'center',
+                                borderWidth: 1,
+                                borderColor: Colors.outline
                             }}
                             keyboardType="number-pad"
                             placeholder="90"
@@ -350,67 +487,94 @@ export default function WorkoutScreen() {
                     </View>
                 </View>
 
+                {/* Historial Expandible */}
+                {exerciseHistory && (
+                    <View style={{ marginHorizontal: 0, marginBottom: 16, backgroundColor: Colors.surface_lowest, borderRadius: 12, overflow: 'hidden' }}>
+                        <TouchableOpacity 
+                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
+                            onPress={() => setExpandedHistory(prev => ({ ...prev, [exerciseId]: !isHistoryExpanded }))}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Timer size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+                                <Text style={{ color: '#94A3B8', fontSize: 13, fontWeight: '700' }}>ÚLTIMA SESIÓN: {new Date(exerciseHistory.date).toLocaleDateString()}</Text>
+                            </View>
+                            {isHistoryExpanded ? <ChevronUp size={18} color="#94A3B8" /> : <ChevronDown size={18} color="#94A3B8" />}
+                        </TouchableOpacity>
+                        
+                        {isHistoryExpanded && (
+                            <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 }}>
+                                {exerciseHistory.exLog.setLogs.map((set: any, sIdx: number) => (
+                                    <View key={sIdx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: sIdx < exerciseHistory.exLog.setLogs.length - 1 ? 1 : 0, borderBottomColor: Colors.outline }}>
+                                        <Text style={{ color: '#E2E8F0', fontSize: 13 }}>Serie {sIdx + 1}</Text>
+                                        <Text style={{ color: '#2BB0FF', fontSize: 13, fontWeight: '700' }}>{set.reps} reps, {set.weight} kg {set.weight ? `(${ (Number(set.weight) * 2.20462).toFixed(1) } lb)` : ''}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+                )}
+
                 {logs.map((log, idx) => {
                     const actualIdx = idx;
-                    const isCompleted = completedSets[`${ exerciseId } -${ actualIdx } `];
+                    const isCompleted = completedSets[`${exerciseId} -${actualIdx} `];
                     return (
-                        <View key={`effective - ${ idx } `} style={[styles.setRowDark, isCompleted && styles.setRowCompleted]}>
-                           <Text style={[styles.setNumberTextDark, isCompleted && { color: Colors.primary }]}>{actualIdx + 1}</Text>
-                           <View style={styles.inputGroupDark}>
-                              <Text style={styles.inputLabelDark}>peso (KG)</Text>
-                              <TextInput
-                                  style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.weight !== undefined && log.weight !== null && log.weight !== '' ? String(log.weight) : ''}
-                                  keyboardType="decimal-pad"
-                                  onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weight', val)}
-                                  placeholder="--"
-                                  placeholderTextColor="#0F172A"
-                              />
-                           </View>
-                           <View style={styles.inputGroupDark}>
-                              <Text style={styles.inputLabelDark}>peso (LB)</Text>
-                              <TextInput
-                                  style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.weightLb !== undefined && log.weightLb !== null && log.weightLb !== '' ? String(log.weightLb) : ''}
-                                  keyboardType="decimal-pad"
-                                  onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weightLb', val)}
-                                  placeholder="--"
-                                  placeholderTextColor="#0F172A"
-                              />
-                           </View>
-                           <View style={styles.inputGroupDark}>
-                              <Text style={styles.inputLabelDark}>reps</Text>
-                              <TextInput
-                                  style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
-                                  value={log.reps !== undefined && log.reps !== null && log.reps !== '' ? String(log.reps) : ''}
-                                  keyboardType="decimal-pad"
-                                  onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'reps', val)}
-                                  placeholder="--"
-                                  placeholderTextColor="#0F172A"
-                              />
-                           </View>
-                           <TouchableOpacity 
-                              style={[styles.checkBtnDark, isCompleted && styles.checkBtnCompleted]}
-                              onPress={() => {
-                                  const key = `${ exerciseId } -${ actualIdx } `;
-                                  setCompletedSets(prev => {
-                                      const nextStatus = !prev[key];
-                                      if (nextStatus) {
-                                          const customRest = parseInt(restTimes[exerciseId]) || 90;
-                                          setActiveTimerSeconds(customRest);
-                                          setTimeout(() => setTimerVisible(true), 50);
-                                      }
-                                      return { ...prev, [key]: nextStatus };
-                                  });
-                              }}
-                           >
-                              {isCompleted ? <CheckCheck size={16} color="#000" /> : <Check size={14} color="#334155" />}
-                           </TouchableOpacity>
+                        <View key={`effective - ${idx} `} style={[styles.setRowDark, isCompleted && styles.setRowCompleted]}>
+                            <Text style={[styles.setNumberTextDark, isCompleted && { color: Colors.primary }]}>{actualIdx + 1}</Text>
+                            <View style={styles.inputGroupDark}>
+                                <Text style={styles.inputLabelDark}>peso (KG)</Text>
+                                <TextInput
+                                    style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
+                                    value={log.weight !== undefined && log.weight !== null && log.weight !== '' ? String(log.weight) : ''}
+                                    keyboardType="decimal-pad"
+                                    onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weight', val)}
+                                    placeholder="--"
+                                    placeholderTextColor="#0F172A"
+                                />
+                            </View>
+                            <View style={styles.inputGroupDark}>
+                                <Text style={styles.inputLabelDark}>peso (LB)</Text>
+                                <TextInput
+                                    style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
+                                    value={log.weightLb !== undefined && log.weightLb !== null && log.weightLb !== '' ? String(log.weightLb) : ''}
+                                    keyboardType="decimal-pad"
+                                    onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'weightLb', val)}
+                                    placeholder="--"
+                                    placeholderTextColor="#0F172A"
+                                />
+                            </View>
+                            <View style={styles.inputGroupDark}>
+                                <Text style={styles.inputLabelDark}>reps</Text>
+                                <TextInput
+                                    style={[styles.inputBoxDark, isCompleted && styles.inputBoxCompleted]}
+                                    value={log.reps !== undefined && log.reps !== null && log.reps !== '' ? String(log.reps) : ''}
+                                    keyboardType="decimal-pad"
+                                    onChangeText={(val) => handleUpdateSet(exerciseId, actualIdx, 'reps', val)}
+                                    placeholder="--"
+                                    placeholderTextColor="#0F172A"
+                                />
+                            </View>
+                            <TouchableOpacity
+                                style={[styles.checkBtnDark, isCompleted && styles.checkBtnCompleted]}
+                                onPress={() => {
+                                    const key = `${exerciseId} -${actualIdx} `;
+                                    setCompletedSets(prev => {
+                                        const nextStatus = !prev[key];
+                                        if (nextStatus) {
+                                            const customRest = parseInt(restTimes[exerciseId]) || 90;
+                                            setActiveTimerSeconds(customRest);
+                                            setTimeout(() => setTimerVisible(true), 50);
+                                        }
+                                        return { ...prev, [key]: nextStatus };
+                                    });
+                                }}
+                            >
+                                {isCompleted ? <CheckCheck size={16} color="#000" /> : <Check size={14} color="#334155" />}
+                            </TouchableOpacity>
                         </View>
                     );
                 })}
 
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.addSerieBtnDark}
                     onPress={() => {
                         setSessionLogs(prev => {
@@ -497,97 +661,97 @@ export default function WorkoutScreen() {
                 </View>
 
                 <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 10 }}>
-                
-                {userPlans.length > 1 && (
-                    <View style={{ marginBottom: 20 }}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
-                            {userPlans.map(plan => (
-                                <TouchableOpacity
-                                    key={plan.id}
-                                    style={{
-                                        paddingHorizontal: 16,
-                                        paddingVertical: 8,
-                                        borderRadius: 20,
-                                        backgroundColor: activePlan.id === plan.id ? Colors.primary : Colors.surface,
-                                        marginRight: 10
-                                    }}
-                                    onPress={() => { setSelectedPlanId(plan.id); setSelectedDayIdx(0); }}
-                                >
-                                    <Text style={{
-                                        fontFamily: Fonts.headline,
-                                        fontSize: 14,
-                                        fontWeight: '700',
-                                        color: activePlan.id === plan.id ? '#000' : Colors.textMuted
-                                    }}>
-                                        {plan.month} {plan.year}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                )}
-                
-                <ScrollView 
-                    showsVerticalScrollIndicator={false} 
-                    contentContainerStyle={{ gap: 16, paddingBottom: Math.max(120, insets.bottom + 100) }}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-                >
-                    {activePlan.days.map((day, idx) => {
-                        const isSelected = selectedDayIdx === idx;
-                        return (
-                            <TouchableOpacity 
-                                key={day.dayNumber}
-                                style={[
-                                    { backgroundColor: Colors.surface, padding: 20, borderRadius: 16, borderWidth: 0, borderColor: Colors.surface_lowest },
-                                    isSelected && { borderColor: Colors.primary, backgroundColor: Colors.primary_container }
-                                ]}
-                                onPress={() => setSelectedDayIdx(idx)}
-                                activeOpacity={0.8}
-                            >
-                                <Text style={{ fontFamily: Fonts.headline, fontSize: 18, fontWeight: '800', color: isSelected ? '#000' : '#FFF', marginBottom: 4 }}>
-                                    {(() => {
-                                        let base = day.label;
-                                        let arr = day.muscleGroups || [];
-                                        
-                                        if (arr.length === 0) {
-                                            const muscles = new Set<string>();
-                                            day.exercises.forEach(pe => {
-                                                if (pe.exercise.muscleGroup) muscles.add(pe.exercise.muscleGroup);
-                                            });
-                                            arr = Array.from(muscles);
-                                        }
 
-                                        if (arr.length > 0 && !base.includes('—') && !base.includes('(')) {
-                                            base += ` (${ arr.join(', ') })`;
-                                        }
-                                        return base;
-                                    })()}
-                                </Text>
-                                <Text style={{ fontFamily: Fonts.body, fontSize: 13, color: isSelected ? '#000' : Colors.textMuted, fontWeight: '500' }}>
-                                    {day.exercises.length} Ejercicios disponibles
-                                </Text>
-                                {isSelected && day.exercises.length > 0 && (
-                                    <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.1)' }}>
-                                        {day.exercises.map((pe, exIdx) => (
-                                            <Text key={pe.exercise.id} style={{ fontFamily: Fonts.body, fontSize: 13, color: '#000', marginBottom: 4 }} numberOfLines={1}>
-                                                • {pe.exercise.name} <Text style={{ color: 'rgba(0,0,0,0.6)' }}>({pe.sets}x{pe.minReps}-{pe.maxReps})</Text>
-                                            </Text>
-                                        ))}
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
+                    {userPlans.length > 1 && (
+                        <View style={{ marginBottom: 20 }}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                                {userPlans.map(plan => (
+                                    <TouchableOpacity
+                                        key={plan.id}
+                                        style={{
+                                            paddingHorizontal: 16,
+                                            paddingVertical: 8,
+                                            borderRadius: 20,
+                                            backgroundColor: activePlan.id === plan.id ? Colors.primary : Colors.surface,
+                                            marginRight: 10
+                                        }}
+                                        onPress={() => { setSelectedPlanId(plan.id); setSelectedDayIdx(0); }}
+                                    >
+                                        <Text style={{
+                                            fontFamily: Fonts.headline,
+                                            fontSize: 14,
+                                            fontWeight: '700',
+                                            color: activePlan.id === plan.id ? '#000' : Colors.textMuted
+                                        }}>
+                                            {plan.month} {plan.year}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
 
-                <View style={{ position: 'absolute', bottom: 40, left: 20, right: 20 }}>
-                    <TouchableOpacity 
-                        style={[styles.submitBtnDark, { shadowColor: Colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }]}
-                        onPress={handleStartSession}
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 16, paddingBottom: Math.max(120, insets.bottom + 100) }}
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
                     >
-                        <Text style={styles.submitBtnTextDark}>COMENZAR ENTRENAMIENTO</Text>
-                    </TouchableOpacity>
-                </View>
+                        {activePlan.days.map((day, idx) => {
+                            const isSelected = selectedDayIdx === idx;
+                            return (
+                                <TouchableOpacity
+                                    key={day.dayNumber}
+                                    style={[
+                                        { backgroundColor: Colors.surface, padding: 20, borderRadius: 16, borderWidth: 0, borderColor: Colors.surface_lowest },
+                                        isSelected && { borderColor: Colors.primary, backgroundColor: Colors.primary_container }
+                                    ]}
+                                    onPress={() => setSelectedDayIdx(idx)}
+                                    activeOpacity={0.8}
+                                >
+                                    <Text style={{ fontFamily: Fonts.headline, fontSize: 18, fontWeight: '800', color: isSelected ? '#000' : '#FFF', marginBottom: 4 }}>
+                                        {(() => {
+                                            let base = day.label;
+                                            let arr = day.muscleGroups || [];
+
+                                            if (arr.length === 0) {
+                                                const muscles = new Set<string>();
+                                                day.exercises.forEach(pe => {
+                                                    if (pe.exercise.muscleGroup) muscles.add(pe.exercise.muscleGroup);
+                                                });
+                                                arr = Array.from(muscles);
+                                            }
+
+                                            if (arr.length > 0 && !base.includes('—') && !base.includes('(')) {
+                                                base += ` (${arr.join(', ')})`;
+                                            }
+                                            return base;
+                                        })()}
+                                    </Text>
+                                    <Text style={{ fontFamily: Fonts.body, fontSize: 13, color: isSelected ? '#000' : Colors.textMuted, fontWeight: '500' }}>
+                                        {day.exercises.length} Ejercicios disponibles
+                                    </Text>
+                                    {isSelected && day.exercises.length > 0 && (
+                                        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.1)' }}>
+                                            {day.exercises.map((pe, exIdx) => (
+                                                <Text key={pe.exercise.id} style={{ fontFamily: Fonts.body, fontSize: 13, color: '#000', marginBottom: 4 }} numberOfLines={1}>
+                                                    • {pe.exercise.name} <Text style={{ color: 'rgba(0,0,0,0.6)' }}>({pe.sets}x{pe.minReps}-{pe.maxReps})</Text>
+                                                </Text>
+                                            ))}
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+
+                    <View style={{ position: 'absolute', bottom: 40, left: 20, right: 20 }}>
+                        <TouchableOpacity
+                            style={[styles.submitBtnDark, { shadowColor: Colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }]}
+                            onPress={handleStartSession}
+                        >
+                            <Text style={styles.submitBtnTextDark}>COMENZAR ENTRENAMIENTO</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         );
@@ -599,7 +763,7 @@ export default function WorkoutScreen() {
                 <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.navBtn}>
                     <ArrowLeft size={24} color="#F8FAFC" />
                 </TouchableOpacity>
-                <Text style={styles.navTitleDark}>
+                <Text style={[styles.navTitleDark, { flex: 1, marginHorizontal: 8 }]} numberOfLines={1}>
                     {(() => {
                         let base = currentDay?.label || 'Día de Entrenamiento';
                         if (currentDay && !base.includes('—') && !base.includes('(')) {
@@ -612,17 +776,17 @@ export default function WorkoutScreen() {
                                 arr = Array.from(muscles);
                             }
                             if (arr.length > 0) {
-                                base += ` (${ arr.join(', ') })`;
+                                base += ` (${arr.join(', ')})`;
                             }
                         }
                         return base;
                     })()}
                 </Text>
-                
+
                 <SessionTimer sessionStartTime={sessionStartTime} durationRef={sessionDurationRef} />
-                
+
                 {pendingOfflineLogs > 0 && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eab308', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginRight: 8 }}
                         onPress={() => {
                             showToast.info('Sincronizando entrenamientos pendientes...');
@@ -634,16 +798,20 @@ export default function WorkoutScreen() {
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.navBtn}
                     onPress={() => {
+                        const options: any[] = [];
+                        if (recentSession) {
+                            options.push({ text: "Ver última sesión", onPress: () => setShowRecentSessionModal(true) });
+                        }
+                        options.push({ text: "Cancelar sesión", style: "destructive", onPress: discardWorkoutSession });
+                        options.push({ text: "Volver", style: "cancel" });
+
                         Alert.alert(
-                            "Descartar sesión",
-                            "¿Estás seguro de que deseas descartar esta sesión? Perderás todo el progreso.",
-                            [
-                                { text: "Cancelar", style: "cancel" },
-                                { text: "Descartar", style: "destructive", onPress: discardWorkoutSession }
-                            ]
+                            "Opciones de Sesión",
+                            "¿Qué deseas hacer?",
+                            options
                         );
                     }}
                 >
@@ -651,58 +819,171 @@ export default function WorkoutScreen() {
                 </TouchableOpacity>
             </View>
 
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
-            >
-                <FlatList
-                    data={groupedExercises}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderGroupItem}
-                    contentContainerStyle={styles.listContentDark}
-                    showsVerticalScrollIndicator={false}
-                    ListEmptyComponent={(
-                        <View style={styles.emptyExercises}>
-                            <Dumbbell size={32} color={colors.textMuted} />
-                            <Text style={[styles.emptyExercisesText, { color: colors.textMuted }]}>
-                                No hay ejercicios asignados para este día.
-                            </Text>
-                        </View>
-                    )}
-                    ListFooterComponent={currentDay && currentDay.exercises.length > 0 ? (
-                        <View style={styles.footerDark}>
-                            <Text style={styles.footerTitleDark}>COMENTARIOS DE LA SESIÓN</Text>
-                            <TextInput
-                                style={styles.commentInputDark}
-                                placeholder="Escribe cómo te sentiste, molestias o mejoras para la próxima sesión..."
-                                placeholderTextColor="#334155"
-                                multiline
-                                value={comment}
-                                onChangeText={setComment}
-                            />
-                            
-                            <TouchableOpacity 
-                                style={[styles.submitBtnDark, isSaving && { opacity: 0.7 }]}
-                                onPress={handleFinishSession}
-                                disabled={isSaving}
-                            >
-                                {isSaving ? (
-                                    <ActivityIndicator color="#000" />
-                                ) : (
-                                    <Text style={styles.submitBtnTextDark}>GUARDAR SESIÓN</Text>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    ) : null}
-                />
-            </KeyboardAvoidingView>
+            <View style={{ flex: 1 }}>
+                {/* Carrusel superior de ejercicios */}
+                {currentDay && currentDay.exercises.length > 0 && (
+                    <View style={{ paddingVertical: 12, backgroundColor: Colors.background }}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
+                            {currentDay.exercises.map((pe, index) => {
+                                const isSelected = index === activeExerciseIndex;
+                                return (
+                                    <TouchableOpacity
+                                        key={index}
+                                        style={[{
+                                            width: 64,
+                                            height: 64,
+                                            borderRadius: 12,
+                                            backgroundColor: Colors.surface,
+                                            overflow: 'hidden',
+                                            borderWidth: 2,
+                                            borderColor: isSelected ? '#2BB0FF' : 'transparent'
+                                        }]}
+                                        onPress={() => setActiveExerciseIndex(index)}
+                                    >
+                                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                                            <Dumbbell size={24} color={isSelected ? '#2BB0FF' : Colors.textMuted} />
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                )}
 
-            <RestTimerModal 
-                visible={isTimerVisible} 
-                onClose={() => setTimerVisible(false)} 
-                initialSeconds={activeTimerSeconds} 
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={{ flex: 1 }}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+                >
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ paddingBottom: 120 }}
+                    >
+
+
+                        {/* Ejercicio Activo */}
+                        {currentDay && currentDay.exercises.length > 0 ? (
+                            <View>
+                                <FlatList
+                                    ref={exercisesListRef}
+                                    data={currentDay.exercises}
+                                    horizontal
+                                    pagingEnabled
+                                    showsHorizontalScrollIndicator={false}
+                                    keyExtractor={(item, idx) => `exercise-page-${item.id || idx}`}
+                                    onMomentumScrollEnd={(e) => {
+                                        const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                                        if (newIndex !== activeExerciseIndex) {
+                                            setActiveExerciseIndex(newIndex);
+                                        }
+                                    }}
+                                    getItemLayout={(data, index) => ({
+                                        length: SCREEN_WIDTH,
+                                        offset: SCREEN_WIDTH * index,
+                                        index,
+                                    })}
+                                    renderItem={({ item }) => (
+                                        <View style={{ width: SCREEN_WIDTH }}>
+                                            {renderSingleExercise(item)}
+                                        </View>
+                                    )}
+                                />
+                            </View>
+                        ) : (
+                            <View style={styles.emptyExercises}>
+                                <Dumbbell size={32} color={colors.textMuted} />
+                                <Text style={[styles.emptyExercisesText, { color: colors.textMuted }]}>
+                                    No hay ejercicios asignados para este día.
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Comentarios de la sesión */}
+                        {currentDay && currentDay.exercises.length > 0 && (
+                            <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+                                <Text style={styles.footerTitleDark}>COMENTARIOS DE LA SESIÓN</Text>
+                                <TextInput
+                                    style={styles.commentInputDark}
+                                    placeholder="Escribe cómo te sentiste, molestias o mejoras para la próxima sesión..."
+                                    placeholderTextColor="#334155"
+                                    multiline
+                                    value={comment}
+                                    onChangeText={setComment}
+                                />
+                            </View>
+                        )}
+                    </ScrollView>
+                </KeyboardAvoidingView>
+
+                {/* Botón Guardar Sesión Fijo */}
+                {currentDay && currentDay.exercises.length > 0 && (
+                    <View style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 30 : 20, left: 16, right: 16 }}>
+                        <TouchableOpacity
+                            style={[{ backgroundColor: '#FFF', borderRadius: 12, height: 56, justifyContent: 'center', alignItems: 'center', shadowColor: '#FFF', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } }, isSaving && { opacity: 0.7 }]}
+                            onPress={handleFinishSession}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <ActivityIndicator color="#000" />
+                            ) : (
+                                <Text style={{ color: '#000', fontFamily: Fonts.headline, fontSize: 16, fontWeight: '900', letterSpacing: 1 }}>GUARDAR SESIÓN</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+
+            <RestTimerModal
+                visible={isTimerVisible}
+                onClose={() => setTimerVisible(false)}
+                initialSeconds={activeTimerSeconds}
             />
+
+            {/* Modal de Última Sesión */}
+            <Modal visible={showRecentSessionModal} animationType="fade" transparent={true}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 }}>
+                    <View style={{ backgroundColor: Colors.background, borderRadius: 16, padding: 20, maxHeight: '80%', borderWidth: 1, borderColor: Colors.surface }}>
+                        <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Última sesión realizada</Text>
+                        
+                        {!recentSession ? (
+                            <Text style={{ color: Colors.textMuted }}>No hay registros de una sesión anterior para este día.</Text>
+                        ) : (
+                            <ScrollView showsVerticalScrollIndicator={false}>
+                                <Text style={{ color: '#94A3B8', marginBottom: 12, fontWeight: '500' }}>
+                                    Fecha: {new Date(recentSession.date).toLocaleDateString()}
+                                </Text>
+                                {recentSession.exercises.map((exLog, idx) => {
+                                    let exerciseName = 'Ejercicio desconocido';
+                                    const plannedEx = currentDay?.exercises.find(pe => String(pe.id || pe.exercise.id) === String(exLog.exerciseId));
+                                    if (plannedEx) {
+                                        exerciseName = plannedEx.exercise.name;
+                                    } else {
+                                        const globalEx = allExercises.find(e => String(e.id) === String(exLog.exerciseId));
+                                        if (globalEx) exerciseName = globalEx.name;
+                                    }
+                                    return (
+                                        <View key={idx} style={{ marginBottom: 16, backgroundColor: Colors.surface, padding: 12, borderRadius: 12 }}>
+                                            <Text style={{ color: '#2BB0FF', fontWeight: 'bold', marginBottom: 8, fontSize: 15 }}>{exerciseName}</Text>
+                                            {exLog.setLogs.map((set, sIdx) => (
+                                                <Text key={sIdx} style={{ color: '#FFF', fontSize: 13, marginBottom: 4 }}>
+                                                    Serie {sIdx + 1}: {set.reps} reps, {set.weight} kg {set.weight ? `(${ (Number(set.weight) * 2.20462).toFixed(1) } lb)` : ''}
+                                                </Text>
+                                            ))}
+                                        </View>
+                                    );
+                                })}
+                            </ScrollView>
+                        )}
+                        
+                        <TouchableOpacity 
+                            style={{ marginTop: 20, backgroundColor: '#0F172A', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#334155' }}
+                            onPress={() => setShowRecentSessionModal(false)}
+                        >
+                            <Text style={{ color: '#FFF', fontWeight: '600' }}>Cerrar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }

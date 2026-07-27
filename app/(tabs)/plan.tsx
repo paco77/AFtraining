@@ -16,7 +16,10 @@ import {
 import { borderRadius, Colors, MuscleGroupColors, Spacing, Typography } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
 import { useUser } from '@/context/UserContext';
+import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
+import { Image } from 'expo-image';
+import { Video, ResizeMode } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
     ArrowLeft,
@@ -1129,15 +1132,35 @@ const ExercisePicker = ({
                                     onPress={() => onToggle(item)}
                                 >
                                     <View style={styles.exerciseRowLeft}>
-                                        <View
-                                            style={[
-                                                styles.exerciseRowDot,
-                                                {
-                                                    backgroundColor:
-                                                        MuscleGroupColors[item.muscleGroup] || Colors.primary,
-                                                },
-                                            ]}
-                                        />
+                                        {item.videoUrl ? (
+                                            item.videoUrl.toLowerCase().includes('.mp4') ? (
+                                                <Video
+                                                    source={{ uri: item.videoUrl.startsWith('http') ? item.videoUrl : `${API_HOST}${item.videoUrl.startsWith('/') ? '' : '/'}${item.videoUrl}` }}
+                                                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#0F172A' }}
+                                                    useNativeControls={false}
+                                                    resizeMode={ResizeMode.COVER}
+                                                    isLooping
+                                                    shouldPlay
+                                                    isMuted
+                                                />
+                                            ) : (
+                                                <Image
+                                                    source={{ uri: item.videoUrl.startsWith('http') ? item.videoUrl : `${API_HOST}${item.videoUrl.startsWith('/') ? '' : '/'}${item.videoUrl}` }}
+                                                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#0F172A' }}
+                                                    contentFit="cover"
+                                                />
+                                            )
+                                        ) : (
+                                            <View
+                                                style={[
+                                                    styles.exerciseRowDot,
+                                                    {
+                                                        backgroundColor:
+                                                            MuscleGroupColors[item.muscleGroup] || Colors.primary,
+                                                    },
+                                                ]}
+                                            />
+                                        )}
                                         <View style={{ flex: 1 }}>
                                             <View style={styles.exerciseRowNameRow}>
                                                 <Text style={styles.exerciseRowName} numberOfLines={1}>

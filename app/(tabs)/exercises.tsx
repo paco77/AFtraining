@@ -6,6 +6,8 @@ import {
 import { borderRadius, Colors, MuscleGroupColors, Spacing } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useUser } from '@/context/UserContext';
+import { API_HOST } from '@/services/api';
 import api from '@/services/api';
 import { showToast } from '@/services/toast';
 import {
@@ -18,8 +20,12 @@ import {
     Trash2,
     X,
     Edit2,
+    Video,
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image } from 'expo-image';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import {
     Alert,
     FlatList,
@@ -208,6 +214,31 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                             </View>
                         ))}
                     </View>
+
+                    {/* Video URL */}
+                    {exercise.videoUrl ? (
+                        <View style={styles.detailSection}>
+                            <View style={styles.detailLabelRow}>
+                                <Text style={styles.detailLabelIcon}>🎥</Text>
+                                <Text style={styles.detailLabel}>Video/GIF</Text>
+                            </View>
+                            {exercise.videoUrl.toLowerCase().includes('.mp4') ? (
+                                <ExpoVideo
+                                    source={{ uri: exercise.videoUrl.startsWith('http') ? exercise.videoUrl : `${API_HOST}${exercise.videoUrl.startsWith('/') ? '' : '/'}${exercise.videoUrl}` }}
+                                    style={{ width: '100%', height: 250, borderRadius: 12, marginTop: 8, backgroundColor: '#0F172A' }}
+                                    useNativeControls
+                                    resizeMode={ResizeMode.CONTAIN}
+                                    isLooping
+                                />
+                            ) : (
+                                <Image 
+                                    source={{ uri: exercise.videoUrl.startsWith('http') ? exercise.videoUrl : `${API_HOST}${exercise.videoUrl.startsWith('/') ? '' : '/'}${exercise.videoUrl}` }} 
+                                    style={{ width: '100%', height: 250, borderRadius: 12, marginTop: 8, backgroundColor: '#0F172A' }} 
+                                    contentFit="contain" 
+                                />
+                            )}
+                        </View>
+                    ) : null}
                 </View>
             )}
         </TouchableOpacity>
@@ -230,6 +261,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
     const [primaryMuscles, setPrimaryMuscles] = useState('');
     const [secondaryMuscles, setSecondaryMuscles] = useState('');
     const [benefits, setBenefits] = useState('');
+    const [videoUrl, setVideoUrl] = useState('');
     const { muscleGroups } = usePlans();
     const [selectedGroup, setSelectedGroup] = useState<string>('Pecho');
     const [selectedLevel, setSelectedLevel] = useState<Level>('Principiante');
@@ -243,6 +275,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
             setPrimaryMuscles(initialData.primaryMuscles.join(', '));
             setSecondaryMuscles(initialData.secondaryMuscles.join(', '));
             setBenefits(initialData.benefits.join(', '));
+            setVideoUrl(initialData.videoUrl || '');
             setSelectedGroup(initialData.muscleGroup);
             setSelectedLevel(initialData.level);
         } else if (!visible) {
@@ -263,6 +296,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
         setPrimaryMuscles('');
         setSecondaryMuscles('');
         setBenefits('');
+        setVideoUrl('');
         setSelectedGroup(muscleGroups[0] || 'Pecho');
         setSelectedLevel('Principiante');
     };
@@ -291,6 +325,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                 .split(',')
                 .map((b) => b.trim())
                 .filter(Boolean),
+            videoUrl: videoUrl.trim(),
             level: selectedLevel,
             isCustom: true,
         };
@@ -455,6 +490,33 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                             placeholderTextColor={Colors.textMuted}
                         />
 
+                        {/* Video File */}
+                        <Text style={styles.formLabel}>Video (Opcional)</Text>
+                        <TouchableOpacity
+                            style={[styles.formInput, { justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surfaceLight }]}
+                            onPress={async () => {
+                                const result = await ImagePicker.launchImageLibraryAsync({
+                                    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+                                    allowsEditing: true,
+                                    quality: 0.8,
+                                });
+                                if (!result.canceled) {
+                                    setVideoUrl(result.assets[0].uri);
+                                }
+                            }}
+                        >
+                            {videoUrl ? (
+                                <Text style={{ color: Colors.primary }} numberOfLines={1}>
+                                    {videoUrl.split('/').pop() || 'Video seleccionado'}
+                                </Text>
+                            ) : (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Video size={18} color={Colors.textMuted} />
+                                    <Text style={{ color: Colors.textMuted }}>Seleccionar video</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
                         {/* Submit */}
                         <TouchableOpacity style={[styles.submitButton, isSaving && { opacity: 0.7 }]} onPress={handleSubmit} disabled={isSaving}>
                             {isSaving ? (
@@ -548,6 +610,7 @@ export default function ExerciseScreen() {
                 muscle_group: exercise.muscleGroup,
                 equipment: exercise.equipment,
                 description: exercise.description,
+                video_url: exercise.videoUrl,
                 is_custom: true
             };
             await api.post('/exercises', payload);
@@ -662,7 +725,7 @@ export default function ExerciseScreen() {
             {/* Exercise List */}
             <SectionList
                 sections={sections}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => item?.id || String(index)}
                 renderItem={renderExercise}
                 renderSectionHeader={renderSectionHeader}
                 contentContainerStyle={styles.listContent}
