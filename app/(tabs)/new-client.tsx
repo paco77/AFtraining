@@ -11,7 +11,10 @@ import {
     EyeOff,
     Lock,
     User,
-    Watch
+    Watch,
+    Activity,
+    Plus,
+    Trash
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
@@ -43,6 +46,25 @@ export default function NewClientScreen() {
     const [trainingTime, setTrainingTime] = useState('');
     const [objectives, setObjectives] = useState('');
 
+    // Metrics / Measurements
+    const [dynamicMeasurements, setDynamicMeasurements] = useState([{ name: '% Grasa', value: '' }]);
+
+    const handleAddMeasurement = () => {
+        setDynamicMeasurements(prev => [...prev, { name: '', value: '' }]);
+    };
+
+    const handleRemoveMeasurement = (index: number) => {
+        setDynamicMeasurements(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const updateMeasurement = (index: number, key: 'name' | 'value', val: string) => {
+        setDynamicMeasurements(prev => {
+            const newArr = [...prev];
+            newArr[index][key] = val;
+            return newArr;
+        });
+    };
+
     // Credentials
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -63,6 +85,13 @@ export default function NewClientScreen() {
             return;
         }
 
+        const measurementsObj: Record<string, string> = {};
+        dynamicMeasurements.forEach(m => {
+            if (m.name.trim() && m.value.trim()) {
+                measurementsObj[m.name.trim()] = m.value.trim();
+            }
+        });
+
         const clientData = {
             name,
             username,
@@ -73,6 +102,7 @@ export default function NewClientScreen() {
             height: Number(height) || null,
             training_time: trainingTime,
             objectives,
+            measurements: Object.keys(measurementsObj).length > 0 ? JSON.stringify(measurementsObj) : null,
         };
 
         setIsSaving(true);
@@ -273,6 +303,45 @@ export default function NewClientScreen() {
                         value={objectives}
                         onChangeText={setObjectives}
                     />
+                </View>
+
+                {/* Advanced Biometrics / Measurements */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                        <Activity size={18} color={Colors.primary} />
+                        <Text style={styles.sectionTitle}>Biometría Avanzada</Text>
+                    </View>
+                    
+                    {dynamicMeasurements.map((meas, idx) => (
+                        <View key={idx} style={styles.measurementRow}>
+                            <TextInput
+                                style={[styles.input, styles.measurementNameInput]}
+                                placeholder="Nombre (ej. Pecho)"
+                                placeholderTextColor={Colors.textMuted}
+                                value={meas.name}
+                                onChangeText={(val) => updateMeasurement(idx, 'name', val)}
+                            />
+                            <TextInput
+                                style={[styles.input, styles.measurementValueInput]}
+                                placeholder="Valor"
+                                keyboardType="decimal-pad"
+                                placeholderTextColor={Colors.textMuted}
+                                value={meas.value}
+                                onChangeText={(val) => updateMeasurement(idx, 'value', val)}
+                            />
+                            <TouchableOpacity 
+                                style={styles.removeMeasBtn} 
+                                onPress={() => handleRemoveMeasurement(idx)}
+                            >
+                                <Trash size={20} color={Colors.error || '#ef4444'} />
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                    
+                    <TouchableOpacity style={styles.addMeasBtn} onPress={handleAddMeasurement}>
+                        <Plus size={16} color={Colors.primary} />
+                        <Text style={styles.addMeasBtnText}>Añadir medida</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Photos */}
@@ -509,5 +578,39 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         fontSize: 17,
         color: '#000',
+    },
+    measurementRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 12,
+        alignItems: 'center',
+    },
+    measurementNameInput: {
+        flex: 2,
+    },
+    measurementValueInput: {
+        flex: 1,
+    },
+    removeMeasBtn: {
+        padding: 10,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderRadius: 12,
+    },
+    addMeasBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        borderStyle: 'dashed',
+        borderRadius: 16,
+        gap: 8,
+        marginTop: 4,
+    },
+    addMeasBtnText: {
+        color: Colors.primary,
+        fontWeight: '700',
+        fontSize: 14,
     }
 });

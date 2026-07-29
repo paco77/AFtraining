@@ -121,8 +121,17 @@ export default function NutritionCalculatorScreen() {
                 if (existingPlan.objective) setObjective(existingPlan.objective);
                 if (existingPlan.caloric_adjustment) setCaloricAdjustment(existingPlan.caloric_adjustment.toString());
 
-                if (existingPlan.meals) {
-                    const mappedMeals = existingPlan.meals.map((m: any) => ({
+                let rawMeals: any[] = [];
+                if (Array.isArray(existingPlan.meals)) {
+                    rawMeals = existingPlan.meals;
+                } else if (typeof existingPlan.meals === 'string') {
+                    try { rawMeals = JSON.parse(existingPlan.meals); } catch(e) {}
+                } else if ((existingPlan as any).meals_data && typeof (existingPlan as any).meals_data === 'string') {
+                    try { rawMeals = JSON.parse((existingPlan as any).meals_data); } catch(e) {}
+                }
+
+                if (rawMeals && rawMeals.length > 0) {
+                    const mappedMeals = rawMeals.map((m: any) => ({
                         id: m.id || m.name.toLowerCase().replace(/\s+/g, ''),
                         name: m.name,
                         foods: m.foods.map((f: any) => ({

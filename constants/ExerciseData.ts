@@ -14,6 +14,7 @@ export interface Exercise {
     benefits: string[];
     level: Level;
     isCustom: boolean;
+    videoUrl?: string;
 }
 
 // ─── Muscle Groups ────────────────────────────────────────────────────────────

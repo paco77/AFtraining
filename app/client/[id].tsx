@@ -11,13 +11,15 @@ import {
     ChevronUp,
     Dumbbell,
     Edit,
+    Trash2,
     Ruler,
     Scale,
     Target,
-    Trash2,
     Trophy,
     User,
-    Zap
+    Zap,
+    History as HistoryIcon,
+    PlayCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -211,6 +213,37 @@ export default function ClientDetails() {
                     </View>
                 </View>
 
+                {/* ── Última Sesión ───────────────── */}
+                {history && history.length > 0 && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Última Sesión de Entrenamiento</Text>
+                        <TouchableOpacity style={{ marginTop: 8 }} onPress={() => router.push({ pathname: '/client/history/[id]', params: { id: client.id } } as any)} activeOpacity={0.9}>
+                            <View style={{ overflow: 'hidden', backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }}>
+                                <View style={{ padding: Spacing.md }}>
+                                    <View style={{ backgroundColor: Colors.textMuted + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 }}>
+                                        <Text style={{ color: Colors.textMuted, fontSize: 10, fontWeight: '800' }}>COMPLETADO</Text>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={{ color: Colors.text, fontSize: 18, fontWeight: '700' }}>
+                                                {new Date(history[0].date || history[0].created_at || Date.now()).toLocaleDateString()}
+                                            </Text>
+                                            <Text style={{ color: Colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                                                Ver historial completo de sesiones
+                                            </Text>
+                                        </View>
+                                        <View style={{ backgroundColor: Colors.surface_lowest, borderRadius: 24, padding: 4 }}>
+                                            <View style={{ backgroundColor: Colors.border, borderRadius: 20 }}>
+                                                <HistoryIcon size={24} color={Colors.textMuted} style={{ padding: 4 }} />
+                                            </View>
+                                        </View>
+                                    </View>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {/* ── Progreso Histórico ───────────────── */}
                 <View style={styles.section}>
 
@@ -332,7 +365,15 @@ export default function ClientDetails() {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Planes de Alimentación</Text>
                     {clientNutritionPlans.length > 0 ? clientNutritionPlans.map(plan => {
-                        const totalMeals = plan.meals?.length || 0;
+                        let parsedMeals: any[] = [];
+                        if (Array.isArray(plan.meals)) {
+                            parsedMeals = plan.meals;
+                        } else if (typeof plan.meals === 'string') {
+                            try { parsedMeals = JSON.parse(plan.meals); } catch (e) { }
+                        } else if ((plan as any).meals_data && typeof (plan as any).meals_data === 'string') {
+                            try { parsedMeals = JSON.parse((plan as any).meals_data); } catch (e) { }
+                        }
+                        const totalMeals = parsedMeals.length;
                         const dateText = plan.created_at ? new Date(plan.created_at).toLocaleDateString() : '';
                         const isExpanded = expandedNutritionPlan === plan.id;
                         return (
@@ -394,7 +435,7 @@ export default function ClientDetails() {
                                             </View>
                                         )}
 
-                                        {plan.meals?.map((meal: any, index: number) => (
+                                        {parsedMeals.map((meal: any, index: number) => (
                                             <View key={meal.id || index} style={styles.cpDayRow}>
                                                 <Text style={styles.cpDayLabel}>{meal.name}</Text>
                                                 {meal.foods && meal.foods.length > 0 && (

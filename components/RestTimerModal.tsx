@@ -1,8 +1,8 @@
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Zap } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
-import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View, AppState } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
@@ -19,6 +19,7 @@ interface RestTimerModalProps {
 export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }: RestTimerModalProps) {
     const [timeLeft, setTimeLeft] = useState(initialSeconds);
     const [isActive, setIsActive] = useState(true);
+    const backgroundTimeRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!visible) {
@@ -39,6 +40,22 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
         }
         return () => clearInterval(interval);
     }, [isActive, timeLeft]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            if (nextAppState.match(/inactive|background/)) {
+                backgroundTimeRef.current = Date.now();
+            } else if (nextAppState === 'active' && backgroundTimeRef.current && isActive) {
+                const timeInBackground = Math.floor((Date.now() - backgroundTimeRef.current) / 1000);
+                setTimeLeft(prev => Math.max(0, prev - timeInBackground));
+                backgroundTimeRef.current = null;
+            }
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, [isActive]);
 
     const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60);

@@ -5,6 +5,7 @@ import { showToast } from '@/services/toast';
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import api from '../services/api';
 import { useUser } from './UserContext';
 
@@ -89,7 +90,8 @@ const mapApiExerciseToFrontend = (apiEx: any): Exercise => {
         secondaryMuscles: apiEx.secondary_muscles || [],
         benefits: apiEx.benefits || [],
         level: apiEx.level || 'Principiante',
-        isCustom: !!apiEx.is_custom
+        isCustom: !!apiEx.is_custom,
+        videoUrl: apiEx.video_url || ''
     };
 };
 
@@ -288,7 +290,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     const addExercise = useCallback(async (exercise: Exercise): Promise<Exercise | undefined> => {
         try {
-            const payload = {
+            let dataToSend: any = {
                 name: exercise.name,
                 muscle_group: exercise.muscleGroup,
                 equipment: exercise.equipment,
@@ -299,7 +301,37 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 level: exercise.level,
                 is_custom: exercise.isCustom
             };
-            const response = await api.post('exercises', payload);
+            let headers = {};
+
+            if (exercise.videoUrl && exercise.videoUrl.startsWith('file')) {
+                const formData = new FormData();
+                Object.keys(dataToSend).forEach(key => {
+                    const value = dataToSend[key];
+                    if (Array.isArray(value)) {
+                        value.forEach((v, i) => formData.append(`${key}[${i}]`, String(v)));
+                    } else if (value !== null && value !== undefined) {
+                        formData.append(key, String(value));
+                    }
+                });
+
+                const uri = exercise.videoUrl;
+                const filename = uri.split('/').pop() || 'video.mp4';
+                const match = /\.(\w+)$/.exec(filename);
+                const type = match ? `video/${match[1]}` : `video`;
+
+                // @ts-ignore
+                formData.append('video_file', {
+                    uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+                    name: filename,
+                    type: type,
+                });
+                dataToSend = formData;
+                headers = { 'Content-Type': 'multipart/form-data' };
+            } else if (exercise.videoUrl) {
+                dataToSend.video_url = exercise.videoUrl;
+            }
+
+            const response = await api.post('exercises', dataToSend, { headers });
             const newExercise = mapApiExerciseToFrontend(response.data.data || response.data);
             setAllExercises(prev => [...prev, newExercise]);
 
@@ -317,7 +349,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     const updateExercise = useCallback(async (id: string, exercise: Exercise): Promise<Exercise | undefined> => {
         try {
-            const payload = {
+            let dataToSend: any = {
                 name: exercise.name,
                 muscle_group: exercise.muscleGroup,
                 equipment: exercise.equipment,
@@ -328,7 +360,38 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 level: exercise.level,
                 is_custom: exercise.isCustom
             };
-            const response = await api.put(`exercises/${id}`, payload);
+            let headers = {};
+
+            if (exercise.videoUrl && exercise.videoUrl.startsWith('file')) {
+                const formData = new FormData();
+                Object.keys(dataToSend).forEach(key => {
+                    const value = dataToSend[key];
+                    if (Array.isArray(value)) {
+                        value.forEach((v, i) => formData.append(`${key}[${i}]`, String(v)));
+                    } else if (value !== null && value !== undefined) {
+                        formData.append(key, String(value));
+                    }
+                });
+
+                const uri = exercise.videoUrl;
+                const filename = uri.split('/').pop() || 'video.mp4';
+                const match = /\.(\w+)$/.exec(filename);
+                const type = match ? `video/${match[1]}` : `video`;
+
+                // @ts-ignore
+                formData.append('video_file', {
+                    uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+                    name: filename,
+                    type: type,
+                });
+                formData.append('_method', 'PUT');
+                dataToSend = formData;
+                headers = { 'Content-Type': 'multipart/form-data' };
+            } else if (exercise.videoUrl) {
+                dataToSend.video_url = exercise.videoUrl;
+            }
+
+            const response = await api.post(`exercises/${id}`, dataToSend, { headers });
             const updatedExercise = mapApiExerciseToFrontend(response.data.data || response.data);
             
             setAllExercises(prev => prev.map(ex => ex.id === id ? updatedExercise : ex));

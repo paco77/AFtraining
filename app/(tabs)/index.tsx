@@ -7,6 +7,7 @@ import { useUser } from '@/context/UserContext';
 import Storage from '@/services/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Tabs, useRouter } from 'expo-router';
+import { GlobalSessionTimer } from '@/components/GlobalSessionTimer';
 import {
   Apple,
   BookOpen,
@@ -45,7 +46,7 @@ const { width } = Dimensions.get('window');
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { plans, fetchPlans, activeSessionDay, finishWorkoutSession } = usePlans();
+  const { plans, fetchPlans, activeSessionDay, finishWorkoutSession, sessionStartTime } = usePlans();
   const { currentUser, clients, logout } = useUser();
   const [showCoachInfo, setShowCoachInfo] = useState(false);
   const [bgImage, setBgImage] = useState<string | null>(null);
@@ -100,6 +101,9 @@ export default function HomeScreen() {
   const loggedDays = activePlan?.logs?.length ?? 0;
   const totalSessions = activePlan?.logs?.reduce((sum, l) => sum + (l.sessions?.length ?? 0), 0) ?? 0;
   const totalDays = activePlan?.days.length ?? 0;
+
+  const lastLog = activePlan?.logs && activePlan.logs.length > 0 ? activePlan.logs[activePlan.logs.length - 1] : null;
+  const lastLogDay = lastLog ? activePlan?.days.find(d => d.dayNumber === lastLog.dayNumber) : null;
 
   const content = (
     <ScrollView
@@ -458,24 +462,76 @@ export default function HomeScreen() {
           </View>
 
 
-          {/* Sesión de Hoy */}
-          <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/workout')} activeOpacity={0.9}>
-            <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
-              <View style={styles.sessionContent}>
-                <View style={styles.sessionBadge}>
-                  <Text style={styles.sessionBadgeText}>SESIÓN DE HOY</Text>
-                </View>
-                <View style={styles.sessionBottom}>
-
-                  <View style={styles.sessionPlayBtnWrapper}>
-                    <View style={styles.sessionPlayBtnInner}>
-                      <PlayCircle size={32} color="#000" />
+          {/* Sesión de Hoy o Última Sesión */}
+          {activeSessionDay !== null ? (
+            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/workout')} activeOpacity={0.9}>
+              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
+                <View style={styles.sessionContent}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <View style={styles.sessionBadge}>
+                      <Text style={styles.sessionBadgeText}>SESIÓN ACTIVA</Text>
+                    </View>
+                    <GlobalSessionTimer sessionStartTime={sessionStartTime} />
+                  </View>
+                  <View style={styles.sessionBottom}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sessionTitleClient}>Continuar Entrenamiento</Text>
+                      <Text style={styles.sessionSubTitleClient}>Día {activeSessionDay}</Text>
+                    </View>
+                    <View style={styles.sessionPlayBtnWrapper}>
+                      <View style={styles.sessionPlayBtnInner}>
+                        <PlayCircle size={32} color="#000" />
+                      </View>
                     </View>
                   </View>
                 </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          ) : lastLog ? (
+            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/history')} activeOpacity={0.9}>
+              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
+                <View style={styles.sessionContent}>
+                  <View style={[styles.sessionBadge, { backgroundColor: Colors.textMuted + '30' }]}>
+                    <Text style={[styles.sessionBadgeText, { color: Colors.textMuted }]}>ÚLTIMA SESIÓN</Text>
+                  </View>
+                  <View style={styles.sessionBottom}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sessionTitleClient}>{lastLogDay?.label || `Día ${lastLog.dayNumber}`}</Text>
+                      <Text style={styles.sessionSubTitleClient}>
+                        {lastLogDay?.muscleGroups?.join(' • ') || 'Entrenamiento completado'}
+                      </Text>
+                    </View>
+                    <View style={[styles.sessionPlayBtnWrapper, { backgroundColor: Colors.surface_lowest }]}>
+                      <View style={[styles.sessionPlayBtnInner, { backgroundColor: Colors.border }]}>
+                        <HistoryIcon size={24} color={Colors.textMuted} style={{ padding: 4 }} />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/workout')} activeOpacity={0.9}>
+              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
+                <View style={styles.sessionContent}>
+                  <View style={styles.sessionBadge}>
+                    <Text style={styles.sessionBadgeText}>SESIÓN DE HOY</Text>
+                  </View>
+                  <View style={styles.sessionBottom}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sessionTitleClient}>Comenzar Entrenamiento</Text>
+                      <Text style={styles.sessionSubTitleClient}>Elige tu rutina de hoy</Text>
+                    </View>
+                    <View style={styles.sessionPlayBtnWrapper}>
+                      <View style={styles.sessionPlayBtnInner}>
+                        <PlayCircle size={32} color="#000" />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
 
 
 

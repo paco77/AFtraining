@@ -35,7 +35,8 @@ import {
     User,
     Users,
     X,
-    Mic
+    Mic,
+    Info
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -1002,16 +1003,19 @@ const ExercisePicker = ({
     const { allExercises } = usePlans();
     const [filterGroup, setFilterGroup] = useState<string | 'Todos'>('Todos');
     const [showQuickAdd, setShowQuickAdd] = useState(false);
+    const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
     const available = useMemo(() => {
         let list = allExercises;
         
         // Strictly filter by the muscle groups selected for this day in the previous step
         if (muscleGroups && muscleGroups.length > 0) {
-            list = list.filter((e) => 
-                muscleGroups.includes(e.muscleGroup) || 
-                (e.primaryMuscles && e.primaryMuscles.some(m => muscleGroups.includes(m)))
-            );
+            list = list.filter((e) => {
+                const hasPrimary = Array.isArray(e.primaryMuscles) 
+                    ? e.primaryMuscles.some(m => muscleGroups.includes(m))
+                    : (typeof e.primaryMuscles === 'string' && muscleGroups.some(m => e.primaryMuscles.includes(m)));
+                return muscleGroups.includes(e.muscleGroup) || hasPrimary;
+            });
         } else {
             // If no muscle groups were selected for the day, show no exercises (or all? Usually they want it restricted)
             // But to be safe, if they didn't select any, maybe they just want all.
@@ -1021,10 +1025,12 @@ const ExercisePicker = ({
         }
 
         if (filterGroup !== 'Todos') {
-            list = list.filter((e) => 
-                e.muscleGroup === filterGroup || 
-                (e.primaryMuscles && e.primaryMuscles.includes(filterGroup))
-            );
+            list = list.filter((e) => {
+                const hasPrimaryGroup = Array.isArray(e.primaryMuscles)
+                    ? e.primaryMuscles.includes(filterGroup)
+                    : (typeof e.primaryMuscles === 'string' && e.primaryMuscles.includes(filterGroup));
+                return e.muscleGroup === filterGroup || hasPrimaryGroup;
+            });
         }
         return list;
     }, [muscleGroups, filterGroup, allExercises]);
@@ -1132,35 +1138,15 @@ const ExercisePicker = ({
                                     onPress={() => onToggle(item)}
                                 >
                                     <View style={styles.exerciseRowLeft}>
-                                        {item.videoUrl ? (
-                                            item.videoUrl.toLowerCase().includes('.mp4') ? (
-                                                <Video
-                                                    source={{ uri: item.videoUrl.startsWith('http') ? item.videoUrl : `${API_HOST}${item.videoUrl.startsWith('/') ? '' : '/'}${item.videoUrl}` }}
-                                                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#0F172A' }}
-                                                    useNativeControls={false}
-                                                    resizeMode={ResizeMode.COVER}
-                                                    isLooping
-                                                    shouldPlay
-                                                    isMuted
-                                                />
-                                            ) : (
-                                                <Image
-                                                    source={{ uri: item.videoUrl.startsWith('http') ? item.videoUrl : `${API_HOST}${item.videoUrl.startsWith('/') ? '' : '/'}${item.videoUrl}` }}
-                                                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#0F172A' }}
-                                                    contentFit="cover"
-                                                />
-                                            )
-                                        ) : (
-                                            <View
-                                                style={[
-                                                    styles.exerciseRowDot,
-                                                    {
-                                                        backgroundColor:
-                                                            MuscleGroupColors[item.muscleGroup] || Colors.primary,
-                                                    },
-                                                ]}
-                                            />
-                                        )}
+                                        <View
+                                            style={[
+                                                styles.exerciseRowDot,
+                                                {
+                                                    backgroundColor:
+                                                        MuscleGroupColors[item.muscleGroup] || Colors.primary,
+                                                },
+                                            ]}
+                                        />
                                         <View style={{ flex: 1 }}>
                                             <View style={styles.exerciseRowNameRow}>
                                                 <Text style={styles.exerciseRowName} numberOfLines={1}>
@@ -1175,13 +1161,23 @@ const ExercisePicker = ({
                                             <Text style={styles.exerciseRowEquip}>{item.equipment}</Text>
                                         </View>
                                     </View>
-                                    <View
-                                        style={[
-                                            styles.exerciseCheckbox,
-                                            selected && styles.exerciseCheckboxActive,
-                                        ]}
-                                    >
-                                        {selected && <Check size={12} color="#000" />}
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                        {item.videoUrl && (
+                                            <TouchableOpacity 
+                                                onPress={(e) => { e.stopPropagation(); setDetailExercise(item); }}
+                                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                            >
+                                                <Info size={18} color={Colors.primary} />
+                                            </TouchableOpacity>
+                                        )}
+                                        <View
+                                            style={[
+                                                styles.exerciseCheckbox,
+                                                selected && styles.exerciseCheckboxActive,
+                                            ]}
+                                        >
+                                            {selected && <Check size={12} color="#000" />}
+                                        </View>
                                     </View>
                                 </TouchableOpacity>
                             );
@@ -1189,6 +1185,49 @@ const ExercisePicker = ({
                     />
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Exercise Detail Modal */}
+            <Modal visible={!!detailExercise} animationType="fade" transparent onRequestClose={() => setDetailExercise(null)}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                    <View style={{ width: '100%', backgroundColor: '#0f1a28', borderRadius: 16, padding: 20, alignItems: 'center' }}>
+                        <TouchableOpacity style={{ position: 'absolute', top: 15, right: 15, zIndex: 10 }} onPress={() => setDetailExercise(null)}>
+                            <X size={24} color="#fff" />
+                        </TouchableOpacity>
+                        
+                        <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center', paddingHorizontal: 20 }}>
+                            {detailExercise?.name}
+                        </Text>
+                        
+                        {detailExercise?.videoUrl && (
+                            detailExercise.videoUrl.toLowerCase().includes('.mp4') ? (
+                                <Video
+                                    source={{ uri: detailExercise.videoUrl.startsWith('http') ? detailExercise.videoUrl : `${API_HOST}${detailExercise.videoUrl.startsWith('/') ? '' : '/'}${detailExercise.videoUrl}` }}
+                                    style={{ width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: '#000' }}
+                                    useNativeControls={true}
+                                    resizeMode={ResizeMode.CONTAIN}
+                                    isLooping
+                                    shouldPlay
+                                    isMuted={false}
+                                />
+                            ) : (
+                                <Image
+                                    source={{ uri: detailExercise.videoUrl.startsWith('http') ? detailExercise.videoUrl : `${API_HOST}${detailExercise.videoUrl.startsWith('/') ? '' : '/'}${detailExercise.videoUrl}` }}
+                                    style={{ width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: '#000' }}
+                                    contentFit="contain"
+                                />
+                            )
+                        )}
+                        
+                        {!!detailExercise?.description && (
+                            <ScrollView style={{ maxHeight: 100, marginTop: 15, width: '100%' }}>
+                                <Text style={{ color: '#A0ABC0', textAlign: 'center' }}>
+                                    {detailExercise.description}
+                                </Text>
+                            </ScrollView>
+                        )}
+                    </View>
+                </View>
+            </Modal>
         </Modal>
     );
 };
@@ -1573,7 +1612,7 @@ export default function PlanScreen() {
                             >
                                 <Users size={14} color={assignedClientId === client.id ? '#000' : Colors.textMuted} />
                                 <Text style={[styles.clientChipText, assignedClientId === client.id && styles.clientChipTextActive]}>
-                                    {client.name.split(' ')[0]}
+                                    {client.name?.split(' ')[0] || 'Cliente'}
                                 </Text>
                             </TouchableOpacity>
                         ))}
