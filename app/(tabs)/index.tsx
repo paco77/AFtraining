@@ -1,4 +1,5 @@
 
+import { GlobalSessionTimer } from '@/components/GlobalSessionTimer';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { Client } from '@/constants/UserTypes';
 import { usePlans } from '@/context/PlanContext';
@@ -7,7 +8,6 @@ import { useUser } from '@/context/UserContext';
 import Storage from '@/services/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Tabs, useRouter } from 'expo-router';
-import { GlobalSessionTimer } from '@/components/GlobalSessionTimer';
 import {
   Apple,
   BookOpen,
@@ -24,7 +24,6 @@ import {
   Mail,
   PlayCircle,
   Settings,
-  Timer,
   User as UserIcon,
   Users
 } from 'lucide-react-native';
@@ -401,10 +400,8 @@ export default function HomeScreen() {
                 { icon: CalendarDays, label: 'Mis Planes de entrenamiento', path: '/(tabs)/plan' },
                 { icon: Apple, label: 'Mis Planes de Alimentación', path: '/(tabs)/nutrition' },
                 { icon: Dumbbell, label: 'Elegir sesión de entrenanmiento', path: '/(tabs)/workout', color: '#2BB0FF' },
-                { icon: Timer, label: 'Descanso', path: '/(tabs)/rest' },
-                { icon: HistoryIcon, label: 'Historial', path: '/(tabs)/history' },
+
                 { icon: Footprints, label: 'Pasos Diarios', path: '/(tabs)/steps' },
-                { icon: BookOpen, label: 'Biblioteca de Ejercicios', path: '/(tabs)/exercises' },
                 { icon: UserIcon, label: 'Mi Perfil', path: '/(tabs)/profile' },
               ].map((item, idx, arr) => (
                 <TouchableOpacity

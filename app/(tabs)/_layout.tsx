@@ -1,9 +1,7 @@
+import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { Redirect, Tabs, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePlans } from '@/context/PlanContext';
-import { Fonts } from '@/constants/theme';
 import {
   Apple,
   BookOpen,
@@ -11,19 +9,16 @@ import {
   ChevronRight,
   ClipboardList,
   Dumbbell,
-  History as HistoryIcon,
   Home,
   LogOut,
   Menu,
-  Moon,
-  Sun,
-  Timer,
   User as UserIcon,
   Users,
   X
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { mode, toggle, colors } = useTheme();
@@ -103,42 +98,42 @@ export default function TabLayout() {
           tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: { display: 'none' },
         }}>
-        <Tabs.Screen name="index" options={{ 
+        <Tabs.Screen name="index" options={{
           title: 'Inicio',
           tabBarIcon: ({ color, size }) => <Home size={size} color={color} />
         }} />
-        <Tabs.Screen name="plan" options={{ 
+        <Tabs.Screen name="plan" options={{
           title: isCoach ? 'Mis Planes' : 'Mi Plan',
           tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color} />
         }} />
-        <Tabs.Screen name="nutrition" options={{ 
+        <Tabs.Screen name="nutrition" options={{
           title: isCoach ? 'Nutrición' : 'Mi Dieta',
           tabBarIcon: ({ color, size }) => <Apple size={size} color={color} />
         }} />
-        <Tabs.Screen name="workout" options={{ 
+        <Tabs.Screen name="workout" options={{
           title: 'Entrenar',
           href: isCoach ? null : '/(tabs)/workout',
           tabBarIcon: ({ color, size }) => <Dumbbell size={size} color={color} />
         }} />
-        <Tabs.Screen name="rest" options={{ 
+        <Tabs.Screen name="rest" options={{
           title: 'Descanso',
           href: null
         }} />
-        <Tabs.Screen name="history" options={{ 
+        <Tabs.Screen name="history" options={{
           title: 'Historial',
           href: null
         }} />
-        <Tabs.Screen name="exercises" options={{ 
+        <Tabs.Screen name="exercises" options={{
           title: 'Biblioteca',
           href: null
         }} />
-        <Tabs.Screen name="clients" options={{ 
-          title: 'Clientes', 
+        <Tabs.Screen name="clients" options={{
+          title: 'Clientes',
           href: isCoach ? '/(tabs)/clients' : null,
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />
         }} />
-        <Tabs.Screen name="profile" options={{ 
-          title: 'Mi Perfil', 
+        <Tabs.Screen name="profile" options={{
+          title: 'Mi Perfil',
           headerLeft: () => null,
           tabBarIcon: ({ color, size }) => <UserIcon size={size} color={color} />
         }} />
@@ -201,12 +196,13 @@ export default function TabLayout() {
                   <NavItem icon={CalendarDays} label="Mis Planes de entrenamiento" path="/(tabs)/plan" />
                   <NavItem icon={Apple} label="Mis Planes de Alimentación" path="/(tabs)/nutrition" />
                   <NavItem icon={Dumbbell} label="Elegir sesión de entrenamiento" path="/(tabs)/workout" color={colors.accent} />
-                  <NavItem icon={Timer} label="Descanso" path="/(tabs)/rest" />
-                  <NavItem icon={HistoryIcon} label="Historial" path="/(tabs)/history" />
+                  {/*NavItem icon={HistoryIcon} label="Historial" path="/(tabs)/history" />*/}
                 </>
               )}
 
-              <NavItem icon={BookOpen} label="Biblioteca de Ejercicios" path="/(tabs)/exercises" />
+              {isCoach && (
+                <NavItem icon={BookOpen} label="Biblioteca de Ejercicios" path="/(tabs)/exercises" />
+              )}
               <NavItem icon={UserIcon} label="Mi Perfil" path="/(tabs)/profile" />
 
               <View style={{ height: 40 }} />

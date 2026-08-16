@@ -6,14 +6,14 @@ import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
+import { ResizeMode, Video } from 'expo-av';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, CalendarDays, Check, CheckCheck, ChevronDown, ChevronUp, CloudAlert, Dumbbell, MoreVertical, Plus, Timer } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Video, ResizeMode } from 'expo-av';
-import { ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal } from 'react-native';
-const SCREEN_WIDTH = Dimensions.get('window').width;
+import { ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const SessionTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: number | null, durationRef?: React.MutableRefObject<number> }) => {
     const [elapsed, setElapsed] = useState(0);
@@ -158,6 +158,7 @@ export default function WorkoutScreen() {
     // Grouping state
     const [isGroupingMode, setIsGroupingMode] = useState(false);
     const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
+    const [activeGroupSubExercises, setActiveGroupSubExercises] = useState<Record<string, number>>({});
 
     // Find active plan for current user (most recent one)
     const userPlans = useMemo(() => {
@@ -228,7 +229,7 @@ export default function WorkoutScreen() {
 
     const getExerciseHistory = (exerciseId: string) => {
         if (!activePlan || !activePlan.logs) return null;
-        
+
         const allSessions: { date: string; exLog: any }[] = [];
         activePlan.logs.forEach(dayLog => {
             dayLog.sessions?.forEach(session => {
@@ -326,7 +327,14 @@ export default function WorkoutScreen() {
                 ]
             );
         } else {
-            confirmFinish();
+            Alert.alert(
+                "Finalizar Sesión",
+                "¿Está seguro de finalizar la sesión de entrenamiento?",
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    { text: "Finalizar", style: "destructive", onPress: confirmFinish }
+                ]
+            );
         }
     };
 
@@ -404,18 +412,16 @@ export default function WorkoutScreen() {
     const groupedExercises = useMemo(() => {
         if (!currentDay) return [];
         const result: { isGroup: boolean; id: string; items: PlannedExercise[] }[] = [];
-        let currentGroup: { id: string; isGroup: boolean; items: PlannedExercise[] } | null = null;
+        const seenSupersets = new Set<string>();
 
         currentDay.exercises.forEach(ex => {
             if (ex.supersetId) {
-                if (currentGroup && currentGroup.id === ex.supersetId) {
-                    currentGroup.items.push(ex);
-                } else {
-                    currentGroup = { id: ex.supersetId, isGroup: true, items: [ex] };
-                    result.push(currentGroup);
+                if (!seenSupersets.has(ex.supersetId)) {
+                    seenSupersets.add(ex.supersetId);
+                    const groupItems = currentDay.exercises.filter(e => e.supersetId === ex.supersetId);
+                    result.push({ id: ex.supersetId, isGroup: true, items: groupItems });
                 }
             } else {
-                currentGroup = null;
                 if (ex) result.push({ isGroup: false, id: String(ex.id || ex.exercise?.id), items: [ex] });
             }
         });
@@ -430,15 +436,15 @@ export default function WorkoutScreen() {
         const exerciseHistory = getExerciseHistory(exerciseId);
 
         // Fetch the full exercise from the library to ensure we have the videoUrl
-        const fullExerciseDef = allExercises.find(e => 
-            String(e.id) === String(item.exercise?.id) || 
+        const fullExerciseDef = allExercises.find(e =>
+            String(e.id) === String(item.exercise?.id) ||
             (e.name && item.exercise?.name && e.name.toLowerCase() === item.exercise.name.toLowerCase())
         );
         const finalVideoUrl = item.exercise?.videoUrl || fullExerciseDef?.videoUrl;
 
         return (
             <View style={styles.exerciseContainerDark}>
-                {finalVideoUrl ? (
+                {finalVideoUrl && !isInsideGroup ? (
                     finalVideoUrl.toLowerCase().includes('.mp4') ? (
                         <Video
                             source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
@@ -458,10 +464,16 @@ export default function WorkoutScreen() {
                 <View style={styles.exerciseTitleRowDark}>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.exerciseTitleDark}>{item.exercise.name}</Text>
-                        <Text style={styles.exerciseSubtitleDark}>ENFOQUE: {(item.exercise.muscleGroup || 'CUÁDRICEPS Y GLÚTEOS').toUpperCase()}</Text>
                         <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 4, fontWeight: '500' }}>
-                            {item.sets} series {item.minReps}-{item.maxReps} reps {item.instruction ? `• ${item.instruction}` : ''}
+                            {item.sets} series {item.minReps}-{item.maxReps} reps
                         </Text>
+                        {item.instruction && (
+                            <View style={{ marginTop: 8, backgroundColor: 'rgba(255,255,255,0.05)', padding: 8, borderRadius: 6, borderLeftWidth: 2, borderLeftColor: Colors.primary }}>
+                                <Text style={{ color: Colors.textMuted, fontSize: 12, fontStyle: 'italic', lineHeight: 16 }}>
+                                    {item.instruction}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                     <View style={{ alignItems: 'center', marginLeft: 10 }}>
                         <Text style={{ color: Colors.textMuted, fontSize: 10, marginBottom: 4, fontWeight: '600' }}>Descanso (s)</Text>
@@ -490,7 +502,7 @@ export default function WorkoutScreen() {
                 {/* Historial Expandible */}
                 {exerciseHistory && (
                     <View style={{ marginHorizontal: 0, marginBottom: 16, backgroundColor: Colors.surface_lowest, borderRadius: 12, overflow: 'hidden' }}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
                             onPress={() => setExpandedHistory(prev => ({ ...prev, [exerciseId]: !isHistoryExpanded }))}
                         >
@@ -500,13 +512,13 @@ export default function WorkoutScreen() {
                             </View>
                             {isHistoryExpanded ? <ChevronUp size={18} color="#94A3B8" /> : <ChevronDown size={18} color="#94A3B8" />}
                         </TouchableOpacity>
-                        
+
                         {isHistoryExpanded && (
                             <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 }}>
                                 {exerciseHistory.exLog.setLogs.map((set: any, sIdx: number) => (
                                     <View key={sIdx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: sIdx < exerciseHistory.exLog.setLogs.length - 1 ? 1 : 0, borderBottomColor: Colors.outline }}>
                                         <Text style={{ color: '#E2E8F0', fontSize: 13 }}>Serie {sIdx + 1}</Text>
-                                        <Text style={{ color: '#2BB0FF', fontSize: 13, fontWeight: '700' }}>{set.reps} reps, {set.weight} kg {set.weight ? `(${ (Number(set.weight) * 2.20462).toFixed(1) } lb)` : ''}</Text>
+                                        <Text style={{ color: '#2BB0FF', fontSize: 13, fontWeight: '700' }}>{set.reps} reps, {set.weight} kg {set.weight ? `(${(Number(set.weight) * 2.20462).toFixed(1)} lb)` : ''}</Text>
                                     </View>
                                 ))}
                             </View>
@@ -590,50 +602,102 @@ export default function WorkoutScreen() {
         );
     };
 
-    const renderGroupItem = ({ item }: { item: { isGroup: boolean; id: string; items: PlannedExercise[] } }) => {
-        if (!item.isGroup) {
-            const ex = item.items[0];
-            const exId = String(ex.id || ex.exercise.id);
-            const isSelected = selectedForGroup.includes(exId);
-
+    const renderWorkoutGroup = (item: { isGroup: boolean; id: string; items: PlannedExercise[] }, groupIndex: number, totalGroups: number) => {
+        if (!item.isGroup || item.items.length === 1) {
             return (
-                <View style={{ marginBottom: 24, paddingHorizontal: isGroupingMode ? Spacing.sm : 0 }}>
-                    {isGroupingMode && (
-                        <TouchableOpacity
-                            style={[styles.groupCheckbox, isSelected && styles.groupCheckboxActive]}
-                            onPress={() => setSelectedForGroup(prev =>
-                                prev.includes(exId) ? prev.filter(id => id !== exId) : [...prev, exId]
-                            )}
-                        >
-                            <View style={[styles.checkboxInner, isSelected && { backgroundColor: '#CCFF00' }]} />
-                        </TouchableOpacity>
-                    )}
-                    {renderSingleExercise(ex)}
+                <View>
+                    <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+                        <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                            GROUP {groupIndex + 1} OF {totalGroups}
+                        </Text>
+                    </View>
+                    {renderSingleExercise(item.items[0], false)}
                 </View>
             );
         }
 
         const isTriserie = item.items.length >= 3;
+        const groupColor = isTriserie ? '#4ade80' : '#E31C25';
+        const groupTitle = isTriserie ? `TRISERIE` : `BISERIE`;
 
         return (
-            <View style={styles.supersetContainer}>
-                <View style={styles.supersetHeader}>
-                    <Text style={styles.supersetTitle}>{isTriserie ? 'TRISERIE' : 'BISERIE'}</Text>
-                    {isSessionActive && (
-                        <TouchableOpacity onPress={() => handleRemoveGroup(item.id)} style={styles.ungroupBtn}>
-                            <Text style={styles.ungroupBtnText}>Desagrupar</Text>
-                        </TouchableOpacity>
-                    )}
+            <View>
+                <View style={{ paddingHorizontal: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                        GROUP {groupIndex + 1} OF {totalGroups}
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 4 }}>
+                        {groupedExercises.map((_, i) => (
+                            <View key={i} style={{ width: 24, height: 4, borderRadius: 2, backgroundColor: i === groupIndex ? '#F8FAFC' : '#334155' }} />
+                        ))}
+                    </View>
                 </View>
-                <View style={styles.supersetContent}>
-                    {item.items.map((ex, idx) => (
-                        <View key={String(ex.id || ex.exercise.id)}>
-                            {renderSingleExercise(ex, true)}
-                            {idx < item.items.length - 1 && (
-                                <View style={styles.supersetDivider} />
-                            )}
-                        </View>
-                    ))}
+
+                <View style={{ marginHorizontal: 16, marginBottom: 24, borderLeftWidth: 4, borderLeftColor: groupColor }}>
+                    <View style={{ backgroundColor: groupColor, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderTopRightRadius: 12, borderBottomRightRadius: 12, marginBottom: 16 }}>
+                        <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>{groupTitle}</Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 12, marginBottom: 16 }}>
+                        {item.items.map((ex, idx) => {
+                            const activeSubIndex = activeGroupSubExercises[item.id] || 0;
+                            const isActive = idx === activeSubIndex;
+                            const flex = isActive ? 2 : 1;
+                            const fullExerciseDef = allExercises.find(e => String(e.id) === String(ex.exercise?.id));
+                            const finalVideoUrl = ex.exercise?.videoUrl || fullExerciseDef?.videoUrl;
+
+                            return (
+                                <TouchableOpacity
+                                    key={idx}
+                                    activeOpacity={0.9}
+                                    style={{ flex, height: 180, borderRadius: 16, backgroundColor: Colors.surface, overflow: 'hidden' }}
+                                    onPress={() => setActiveGroupSubExercises(prev => ({ ...prev, [item.id]: idx }))}
+                                >
+                                    {finalVideoUrl ? (
+                                        finalVideoUrl.toLowerCase().includes('.mp4') ? (
+                                            <Video
+                                                source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                                                style={{ width: '100%', height: '100%' }}
+                                                resizeMode={ResizeMode.COVER}
+                                            />
+                                        ) : (
+                                            <Image
+                                                source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                                                style={{ width: '100%', height: '100%' }}
+                                                contentFit="cover"
+                                            />
+                                        )
+                                    ) : (
+                                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                                            <Dumbbell size={32} color={Colors.textMuted} />
+                                        </View>
+                                    )}
+                                    <View style={{ position: 'absolute', bottom: 8, [isActive ? 'left' : 'right']: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                        <Text style={{ color: isActive ? '#E31C25' : '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{isActive ? 'ACTIVE' : 'NEXT'}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+
+                    <View style={{ paddingHorizontal: 12 }}>
+                        <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '900', marginBottom: 4 }}>
+                            {item.items[activeGroupSubExercises[item.id] || 0]?.exercise?.name || 'Ejercicio'}
+                        </Text>
+                        <Text style={{ color: Colors.textMuted, fontSize: 14, fontWeight: '500', marginBottom: 24 }}>
+                            Exercise {(activeGroupSubExercises[item.id] || 0) + 1} of {item.items.length} in {groupTitle.toLowerCase()}
+                        </Text>
+                    </View>
+
+                    {item.items.map((ex, idx) => {
+                        const activeSubIndex = activeGroupSubExercises[item.id] || 0;
+                        if (idx !== activeSubIndex) return null;
+                        return (
+                            <View key={idx} style={{ marginBottom: 24 }}>
+                                {renderSingleExercise(ex, true)}
+                            </View>
+                        );
+                    })}
                 </View>
             </View>
         );
@@ -690,6 +754,13 @@ export default function WorkoutScreen() {
                             </ScrollView>
                         </View>
                     )}
+
+                    <View style={{ marginBottom: 20, padding: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 12, borderLeftWidth: 4, borderLeftColor: Colors.primary }}>
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 12, fontWeight: '700', color: Colors.primary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Notas del Plan</Text>
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 14, color: activePlan.comment ? Colors.textMuted : 'rgba(255,255,255,0.3)', fontStyle: 'italic', lineHeight: 20 }}>
+                            {activePlan.comment || "Sin comentarios adicionales para este plan."}
+                        </Text>
+                    </View>
 
                     <ScrollView
                         showsVerticalScrollIndicator={false}
@@ -820,29 +891,81 @@ export default function WorkoutScreen() {
             </View>
 
             <View style={{ flex: 1 }}>
+                {/* Comentario del Día */}
+                <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 8, padding: 12, borderLeftWidth: 3, borderLeftColor: Colors.primary }}>
+                        <Text style={{ fontFamily: Fonts.body, fontSize: 11, fontWeight: '700', color: Colors.primary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Comentario del Día</Text>
+                        <Text style={{ color: currentDay?.comment ? Colors.textMuted : 'rgba(255,255,255,0.3)', fontSize: 13, fontStyle: 'italic', lineHeight: 18 }}>
+                            {currentDay?.comment || "Sin comentarios adicionales para este día."}
+                        </Text>
+                    </View>
+                </View>
+
                 {/* Carrusel superior de ejercicios */}
                 {currentDay && currentDay.exercises.length > 0 && (
                     <View style={{ paddingVertical: 12, backgroundColor: Colors.background }}>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-                            {currentDay.exercises.map((pe, index) => {
+                            {groupedExercises.map((group, index) => {
                                 const isSelected = index === activeExerciseIndex;
+                                const groupColor = group.items.length >= 3 ? '#4ade80' : '#E31C25';
+
+                                const renderThumbnail = (ex: PlannedExercise, size: number) => {
+                                    const fullExerciseDef = allExercises.find(e => String(e.id) === String(ex.exercise?.id));
+                                    const finalVideoUrl = ex.exercise?.videoUrl || fullExerciseDef?.videoUrl;
+                                    if (!finalVideoUrl) return <Dumbbell size={size} color={isSelected ? '#2BB0FF' : Colors.textMuted} />;
+
+                                    const uri = finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}`;
+                                    // Use Image even for mp4 to extract a static thumbnail and save memory
+                                    // Add autoplay={false} to stop GIFs from animating
+                                    return <Image source={{ uri }} style={{ width: '100%', height: '100%' }} contentFit="cover" autoplay={false} />;
+                                };
+
+                                if (!group.isGroup) {
+                                    return (
+                                        <TouchableOpacity
+                                            key={index}
+                                            style={[{
+                                                width: 64,
+                                                height: 64,
+                                                borderRadius: 12,
+                                                backgroundColor: Colors.surface,
+                                                overflow: 'hidden',
+                                                borderWidth: 2,
+                                                borderColor: isSelected ? '#2BB0FF' : 'transparent',
+                                                justifyContent: 'center',
+                                                alignItems: 'center'
+                                            }]}
+                                            onPress={() => setActiveExerciseIndex(index)}
+                                        >
+                                            {renderThumbnail(group.items[0], 24)}
+                                        </TouchableOpacity>
+                                    );
+                                }
+
                                 return (
                                     <TouchableOpacity
                                         key={index}
                                         style={[{
-                                            width: 64,
+                                            flexDirection: 'row',
                                             height: 64,
                                             borderRadius: 12,
                                             backgroundColor: Colors.surface,
                                             overflow: 'hidden',
                                             borderWidth: 2,
-                                            borderColor: isSelected ? '#2BB0FF' : 'transparent'
+                                            borderColor: isSelected ? groupColor : 'transparent',
+                                            padding: 2,
+                                            gap: 2,
+                                            justifyContent: 'center',
+                                            alignItems: 'center'
                                         }]}
                                         onPress={() => setActiveExerciseIndex(index)}
                                     >
-                                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                                            <Dumbbell size={24} color={isSelected ? '#2BB0FF' : Colors.textMuted} />
-                                        </View>
+                                        {group.items.slice(0, 3).map((ex, subIdx) => (
+                                            <View key={subIdx} style={{ width: 36, height: '100%', backgroundColor: Colors.surface_lowest, borderRadius: 8, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }}>
+                                                {renderThumbnail(ex, 16)}
+                                            </View>
+                                        ))}
+                                        {isSelected && <View style={{ position: 'absolute', bottom: -10, left: '50%', marginLeft: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: groupColor }} />}
                                     </TouchableOpacity>
                                 );
                             })}
@@ -866,11 +989,11 @@ export default function WorkoutScreen() {
                             <View>
                                 <FlatList
                                     ref={exercisesListRef}
-                                    data={currentDay.exercises}
+                                    data={groupedExercises}
                                     horizontal
                                     pagingEnabled
                                     showsHorizontalScrollIndicator={false}
-                                    keyExtractor={(item, idx) => `exercise-page-${item.id || idx}`}
+                                    keyExtractor={(item, idx) => `group-page-${idx}`}
                                     onMomentumScrollEnd={(e) => {
                                         const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
                                         if (newIndex !== activeExerciseIndex) {
@@ -882,9 +1005,9 @@ export default function WorkoutScreen() {
                                         offset: SCREEN_WIDTH * index,
                                         index,
                                     })}
-                                    renderItem={({ item }) => (
+                                    renderItem={({ item, index }) => (
                                         <View style={{ width: SCREEN_WIDTH }}>
-                                            {renderSingleExercise(item)}
+                                            {renderWorkoutGroup(item, index, groupedExercises.length)}
                                         </View>
                                     )}
                                 />
@@ -944,7 +1067,7 @@ export default function WorkoutScreen() {
                 <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 }}>
                     <View style={{ backgroundColor: Colors.background, borderRadius: 16, padding: 20, maxHeight: '80%', borderWidth: 1, borderColor: Colors.surface }}>
                         <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Última sesión realizada</Text>
-                        
+
                         {!recentSession ? (
                             <Text style={{ color: Colors.textMuted }}>No hay registros de una sesión anterior para este día.</Text>
                         ) : (
@@ -966,7 +1089,7 @@ export default function WorkoutScreen() {
                                             <Text style={{ color: '#2BB0FF', fontWeight: 'bold', marginBottom: 8, fontSize: 15 }}>{exerciseName}</Text>
                                             {exLog.setLogs.map((set, sIdx) => (
                                                 <Text key={sIdx} style={{ color: '#FFF', fontSize: 13, marginBottom: 4 }}>
-                                                    Serie {sIdx + 1}: {set.reps} reps, {set.weight} kg {set.weight ? `(${ (Number(set.weight) * 2.20462).toFixed(1) } lb)` : ''}
+                                                    Serie {sIdx + 1}: {set.reps} reps, {set.weight} kg {set.weight ? `(${(Number(set.weight) * 2.20462).toFixed(1)} lb)` : ''}
                                                 </Text>
                                             ))}
                                         </View>
@@ -974,8 +1097,8 @@ export default function WorkoutScreen() {
                                 })}
                             </ScrollView>
                         )}
-                        
-                        <TouchableOpacity 
+
+                        <TouchableOpacity
                             style={{ marginTop: 20, backgroundColor: '#0F172A', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#334155' }}
                             onPress={() => setShowRecentSessionModal(false)}
                         >

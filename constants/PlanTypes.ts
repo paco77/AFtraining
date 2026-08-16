@@ -50,6 +50,7 @@ export interface TrainingDay {
     muscleGroups: MuscleGroup[];
     exercises: PlannedExercise[];
     targetVolumes?: Record<string, number>;
+    comment?: string;
 }
 
 export interface MonthlyPlan {
@@ -62,6 +63,7 @@ export interface MonthlyPlan {
     splitType: SplitType;
     days: TrainingDay[];
     logs?: DayLog[];    // workout logs per day
+    comment?: string;   // Optional comment for the plan
     notes?: string;     // Global plan specifications/comments
 }
 

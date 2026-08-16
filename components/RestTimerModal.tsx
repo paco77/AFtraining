@@ -5,6 +5,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View, AppState } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
+
 const { width } = Dimensions.get('window');
 const CIRCLE_SIZE = width * 0.65;
 const RADIUS = (CIRCLE_SIZE - 20) / 2;
@@ -25,7 +26,6 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
         if (!visible) {
             setTimeLeft(initialSeconds);
             setIsActive(true);
-            return;
         }
     }, [visible, initialSeconds]);
 
@@ -47,7 +47,13 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
                 backgroundTimeRef.current = Date.now();
             } else if (nextAppState === 'active' && backgroundTimeRef.current && isActive) {
                 const timeInBackground = Math.floor((Date.now() - backgroundTimeRef.current) / 1000);
-                setTimeLeft(prev => Math.max(0, prev - timeInBackground));
+                setTimeLeft(prev => {
+                    const newTime = Math.max(0, prev - timeInBackground);
+                    if (newTime <= 0) {
+                        setIsActive(false);
+                    }
+                    return newTime;
+                });
                 backgroundTimeRef.current = null;
             }
         });
@@ -64,10 +70,16 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
     };
 
     const addTime = (amount: number) => {
-        setTimeLeft((prev) => prev + amount);
+        setTimeLeft((prev) => {
+            const newTime = Math.max(0, prev + amount);
+            if (newTime <= 0) setIsActive(false);
+            return newTime;
+        });
     };
 
-    const togglePause = () => setIsActive(!isActive);
+    const togglePause = () => {
+        setIsActive(!isActive);
+    };
 
     const handleSkip = () => {
         setTimeLeft(0);

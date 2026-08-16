@@ -18,8 +18,8 @@ import { usePlans } from '@/context/PlanContext';
 import { useUser } from '@/context/UserContext';
 import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
+import { ResizeMode, Video } from 'expo-av';
 import { Image } from 'expo-image';
-import { Video, ResizeMode } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
     ArrowLeft,
@@ -28,18 +28,19 @@ import {
     Check,
     ChevronDown,
     ChevronUp,
+    Info,
+    Mic,
     Minus,
     Pencil,
     Plus,
     Trash2,
     User,
     Users,
-    X,
-    Mic,
-    Info
+    X
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     FlatList,
     KeyboardAvoidingView,
@@ -51,8 +52,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
-    ActivityIndicator
+    View
 } from 'react-native';
 
 // ─── Wizard Steps ─────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ const PlanCard = ({
             exercises,
             comment: sessionComment.trim() || undefined,
         };
-        
+
         setIsSaving(true);
         try {
             await onSaveLog(plan.id, {
@@ -307,18 +307,22 @@ const PlanCard = ({
                     )}
                 </View>
                 <View style={styles.planCardRight}>
-                    <TouchableOpacity
-                        style={styles.editBtn}
-                        onPress={() => onEdit(plan)}
-                    >
-                        <Pencil size={14} color={Colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.deleteBtn}
-                        onPress={() => onDelete(plan.id)}
-                    >
-                        <Trash2 size={14} color={Colors.danger} />
-                    </TouchableOpacity>
+                    {isCoach && (
+                        <>
+                            <TouchableOpacity
+                                style={styles.editBtn}
+                                onPress={() => onEdit(plan)}
+                            >
+                                <Pencil size={14} color={Colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.deleteBtn}
+                                onPress={() => onDelete(plan.id)}
+                            >
+                                <Trash2 size={14} color={Colors.danger} />
+                            </TouchableOpacity>
+                        </>
+                    )}
                     {expanded ? (
                         <ChevronUp size={16} color={Colors.textMuted} />
                     ) : (
@@ -854,7 +858,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
 
     return (
         <Modal visible={visible} animationType="slide" transparent>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.pickerOverlay}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.pickerOverlay}>
                 <View style={[styles.pickerContent, { height: parsedData ? '65%' : '50%' }]}>
                     <View style={styles.pickerHandle} />
                     <View style={styles.pickerHeader}>
@@ -871,12 +875,12 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     Formato esperado: "Músculo, Ejercicio, Series, Repeticiones, Comentario"
                                 </Text>
                                 <TextInput
-                                    style={{ 
-                                        backgroundColor: Colors.surface, 
-                                        color: '#FFF', 
-                                        padding: 16, 
-                                        borderRadius: 12, 
-                                        borderWidth: 1, 
+                                    style={{
+                                        backgroundColor: Colors.surface,
+                                        color: '#FFF',
+                                        padding: 16,
+                                        borderRadius: 12,
+                                        borderWidth: 1,
                                         borderColor: Colors.border,
                                         height: 120,
                                         textAlignVertical: 'top'
@@ -888,16 +892,16 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     onChangeText={setText}
                                     autoFocus
                                 />
-                                <TouchableOpacity 
-                                    style={{ 
-                                        backgroundColor: Colors.primary, 
-                                        padding: 16, 
-                                        borderRadius: 12, 
-                                        marginTop: 20, 
-                                        flexDirection: 'row', 
-                                        justifyContent: 'center', 
-                                        alignItems: 'center' 
-                                    }} 
+                                <TouchableOpacity
+                                    style={{
+                                        backgroundColor: Colors.primary,
+                                        padding: 16,
+                                        borderRadius: 12,
+                                        marginTop: 20,
+                                        flexDirection: 'row',
+                                        justifyContent: 'center',
+                                        alignItems: 'center'
+                                    }}
                                     onPress={handleProcess}
                                 >
                                     <Mic size={18} color="#000" style={{ marginRight: 8 }} />
@@ -909,7 +913,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                 <Text style={{ color: Colors.text, fontSize: 16, fontWeight: 'bold', marginBottom: 16 }}>
                                     Verifica y edita si es necesario:
                                 </Text>
-                                
+
                                 <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Grupo Muscular</Text>
                                 <TextInput
                                     style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, marginBottom: 12 }}
@@ -961,15 +965,15 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     onChangeText={v => setParsedData({ ...parsedData, instruction: v })}
                                 />
 
-                                <TouchableOpacity 
-                                    style={{ backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' }} 
+                                <TouchableOpacity
+                                    style={{ backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' }}
                                     onPress={handleConfirm}
                                 >
                                     <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 16 }}>Confirmar y Añadir</Text>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity 
-                                    style={{ padding: 16, alignItems: 'center', marginTop: 8 }} 
+                                <TouchableOpacity
+                                    style={{ padding: 16, alignItems: 'center', marginTop: 8 }}
                                     onPress={() => setParsedData(null)}
                                 >
                                     <Text style={{ color: Colors.primary, fontSize: 14 }}>Reintentar dictado</Text>
@@ -1007,11 +1011,11 @@ const ExercisePicker = ({
 
     const available = useMemo(() => {
         let list = allExercises;
-        
+
         // Strictly filter by the muscle groups selected for this day in the previous step
         if (muscleGroups && muscleGroups.length > 0) {
             list = list.filter((e) => {
-                const hasPrimary = Array.isArray(e.primaryMuscles) 
+                const hasPrimary = Array.isArray(e.primaryMuscles)
                     ? e.primaryMuscles.some(m => muscleGroups.includes(m))
                     : (typeof e.primaryMuscles === 'string' && muscleGroups.some(m => e.primaryMuscles.includes(m)));
                 return muscleGroups.includes(e.muscleGroup) || hasPrimary;
@@ -1048,7 +1052,7 @@ const ExercisePicker = ({
     return (
         <Modal visible={visible} animationType="slide" transparent>
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.pickerOverlay}
             >
                 <View style={styles.pickerContent}>
@@ -1163,7 +1167,7 @@ const ExercisePicker = ({
                                     </View>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                         {item.videoUrl && (
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={(e) => { e.stopPropagation(); setDetailExercise(item); }}
                                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                             >
@@ -1193,11 +1197,11 @@ const ExercisePicker = ({
                         <TouchableOpacity style={{ position: 'absolute', top: 15, right: 15, zIndex: 10 }} onPress={() => setDetailExercise(null)}>
                             <X size={24} color="#fff" />
                         </TouchableOpacity>
-                        
+
                         <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center', paddingHorizontal: 20 }}>
                             {detailExercise?.name}
                         </Text>
-                        
+
                         {detailExercise?.videoUrl && (
                             detailExercise.videoUrl.toLowerCase().includes('.mp4') ? (
                                 <Video
@@ -1217,7 +1221,7 @@ const ExercisePicker = ({
                                 />
                             )
                         )}
-                        
+
                         {!!detailExercise?.description && (
                             <ScrollView style={{ maxHeight: 100, marginTop: 15, width: '100%' }}>
                                 <Text style={{ color: '#A0ABC0', textAlign: 'center' }}>
@@ -1270,6 +1274,7 @@ export default function PlanScreen() {
     const [filterClientId, setFilterClientId] = useState<string | null>(null);
     const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
     const [planNotes, setPlanNotes] = useState<string>('');
+    const [planComment, setPlanComment] = useState<string>('');
 
     const router = useRouter();
     const params = useLocalSearchParams<{ clientId?: string, filterClientId?: string }>();
@@ -1313,10 +1318,14 @@ export default function PlanScreen() {
     const currentVolumes = useMemo(() => {
         const vols: Record<string, number> = {};
         trainingDays.forEach(day => {
+            if (!day.exercises) return;
             day.exercises.forEach(pe => {
+                if (!pe || !pe.exercise) return;
                 const fullEx = allExercises.find(e => e.id === pe.exercise.id);
-                const g = fullEx?.muscleGroup && fullEx.muscleGroup !== 'Core' ? fullEx.muscleGroup : pe.exercise.muscleGroup;
-                vols[g] = (vols[g] || 0) + (pe.sets || 0);
+                const g = (fullEx?.muscleGroup && fullEx.muscleGroup !== 'Core')
+                    ? fullEx.muscleGroup
+                    : (pe.exercise?.muscleGroup || 'Otro');
+                vols[g] = (vols[g] || 0) + (pe.sets ? Number(pe.sets) : 0);
             });
         });
         return vols;
@@ -1424,6 +1433,7 @@ export default function PlanScreen() {
                 splitType,
                 days: processedDays,
                 notes: planNotes,
+                comment: planComment,
             });
         } else {
             const newPlan: Omit<MonthlyPlan, 'id'> = {
@@ -1434,6 +1444,7 @@ export default function PlanScreen() {
                 splitType,
                 days: processedDays,
                 notes: planNotes,
+                comment: planComment,
             };
             await addPlan(newPlan);
         }
@@ -1442,11 +1453,13 @@ export default function PlanScreen() {
         setAssignedClientId(null);
         setEditingPlanId(null);
         setPlanNotes('');
+        setPlanComment('');
     };
     const closeWizard = () => {
         setShowWizard(false);
         setEditingPlanId(null);
         setPlanNotes('');
+        setPlanComment('');
     };
 
     const openEditWizard = (plan: MonthlyPlan) => {
@@ -1458,7 +1471,8 @@ export default function PlanScreen() {
         setSplitType(plan.splitType);
         setTrainingDays(plan.days);
         setPlanNotes(plan.notes || '');
-        setStep(4); // Go directly to exercise assignment step
+        setPlanComment(plan.comment || '');
+        setStep(1); // Go to step 1 so they can edit comments
         setImplicitClient(false);
         setShowWizard(true);
     };
@@ -1551,13 +1565,13 @@ export default function PlanScreen() {
         field: 'sets' | 'minReps' | 'maxReps',
         value: string
     ) => {
-        const num = parseInt(value, 10) || 0;
+        const num = value === '' ? '' : (parseInt(value, 10) || 0);
         setTrainingDays((prev) => {
             const updated = [...prev];
             const day = { ...updated[dayIdx] };
             day.exercises = day.exercises.map((pe) => {
                 if (pe.exercise.id === exerciseId) {
-                    return { ...pe, [field]: num };
+                    return { ...pe, [field]: num as any };
                 }
                 return pe;
             });
@@ -1584,6 +1598,25 @@ export default function PlanScreen() {
 
 
     // ── Render Wizard Steps ─────────────────────────────────────────────────
+
+    const SUPERSET_COLORS = ['#FF3B30', '#34C759', '#007AFF', '#FF9500', '#AF52DE'];
+
+    const groupExercises = (exercises: PlannedExercise[]) => {
+        const result: { isGroup: boolean; id: string; items: PlannedExercise[] }[] = [];
+        const seenSupersets = new Set<string>();
+        exercises.forEach(pe => {
+            if (pe.supersetId) {
+                if (!seenSupersets.has(pe.supersetId)) {
+                    seenSupersets.add(pe.supersetId);
+                    const groupItems = exercises.filter(e => e.supersetId === pe.supersetId);
+                    result.push({ isGroup: true, id: pe.supersetId, items: groupItems });
+                }
+            } else {
+                result.push({ isGroup: false, id: pe.id || String(pe.exercise.id), items: [pe] });
+            }
+        });
+        return result;
+    };
 
     const renderStep1 = () => (
         <ScrollView
@@ -1670,6 +1703,18 @@ export default function PlanScreen() {
             <Text style={styles.daysHint}>
                 {daysPerWeek} día{daysPerWeek !== 1 ? 's' : ''} / semana · {selectedMonth} {selectedYear}
             </Text>
+
+            <Text style={[styles.stepLabel, { marginTop: Spacing.lg }]}>
+                📝 Comentario General del Plan (Opcional)
+            </Text>
+            <TextInput
+                style={{ backgroundColor: Colors.surface, color: Colors.text, borderRadius: 12, padding: 16, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginTop: 8 }}
+                placeholder="Ej. 'Fase de hipertrofia con énfasis en piernas...'"
+                placeholderTextColor={Colors.textMuted}
+                value={planComment}
+                onChangeText={setPlanComment}
+                multiline
+            />
         </ScrollView>
     );
 
@@ -1748,6 +1793,22 @@ export default function PlanScreen() {
                             );
                         })}
                     </View>
+                    <View style={{ marginTop: 12 }}>
+                        <TextInput
+                            style={{ backgroundColor: Colors.surface, color: Colors.text, borderRadius: 8, padding: 12, fontSize: 13, borderColor: Colors.surface_lowest, borderWidth: 1, minHeight: 60, textAlignVertical: 'top' }}
+                            placeholder="Comentario adicional para el día (opcional)..."
+                            placeholderTextColor={Colors.textMuted}
+                            value={day.comment || ''}
+                            onChangeText={(val) => {
+                                setTrainingDays(prev => {
+                                    const newDays = [...prev];
+                                    newDays[idx] = { ...newDays[idx], comment: val };
+                                    return newDays;
+                                });
+                            }}
+                            multiline
+                        />
+                    </View>
                 </View>
             ))}
         </ScrollView>
@@ -1756,6 +1817,7 @@ export default function PlanScreen() {
     const renderStep4 = () => (
         <ScrollView
             style={styles.stepContent}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
         >
@@ -1806,13 +1868,15 @@ export default function PlanScreen() {
                                 onPress={() => {
                                     Alert.alert('Eliminar Día', '¿Seguro que deseas eliminar este día de entrenamiento?', [
                                         { text: 'Cancelar', style: 'cancel' },
-                                        { text: 'Eliminar', style: 'destructive', onPress: () => {
-                                            setTrainingDays(prev => {
-                                                const newDays = prev.filter((_, i) => i !== idx).map((d, i) => ({ ...d, dayNumber: i + 1, label: `Día ${i + 1}` }));
-                                                setDaysPerWeek(newDays.length);
-                                                return newDays;
-                                            });
-                                        }}
+                                        {
+                                            text: 'Eliminar', style: 'destructive', onPress: () => {
+                                                setTrainingDays(prev => {
+                                                    const newDays = prev.filter((_, i) => i !== idx).map((d, i) => ({ ...d, dayNumber: i + 1, label: `Día ${i + 1}` }));
+                                                    setDaysPerWeek(newDays.length);
+                                                    return newDays;
+                                                });
+                                            }
+                                        }
                                     ]);
                                 }}
                             >
@@ -1838,247 +1902,246 @@ export default function PlanScreen() {
                         <>
                             {/* Quick Muscle Group Selector for this day */}
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -12, paddingHorizontal: 12, marginBottom: 12, marginTop: 4 }}>
-                        {muscleGroups.map((g: string) => {
-                            const active = day.muscleGroups.includes(g);
-                            const color = MuscleGroupColors[g] || Colors.primary;
-                            return (
-                                <TouchableOpacity
-                                    key={g}
-                                    style={[
-                                        styles.configMuscleChip,
-                                        active && {
-                                            backgroundColor: color + '22',
-                                            borderColor: color,
-                                        },
-                                        { paddingVertical: 4, paddingHorizontal: 10, minWidth: 0, marginRight: 8, marginBottom: 0 }
-                                    ]}
-                                    onPress={() => toggleMuscleGroup(idx, g)}
-                                >
-                                    <Text style={[styles.configMuscleText, active && { color }, { fontSize: 11 }]}>{g}</Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </ScrollView>
-                    {day.exercises.length > 0 ? (
-                        <View style={styles.selectedExercisesList}>
-                            {day.exercises.map((pe) => (
-                                <View key={pe.exercise.id} style={[styles.selectedExercise, pe.supersetId ? { borderColor: '#CCFF00', borderWidth: 2 } : {}]}>
-
-                                    {/* Grouping Checkbox / Superset Header Overlay */}
-                                    {groupingDayIdx === idx ? (
+                                {muscleGroups.map((g: string) => {
+                                    const active = day.muscleGroups.includes(g);
+                                    const color = MuscleGroupColors[g] || Colors.primary;
+                                    return (
                                         <TouchableOpacity
-                                            style={[styles.groupCheckboxPlan, selectedForGroup.includes(pe.exercise.id) && styles.groupCheckboxPlanActive]}
-                                            onPress={() => setSelectedForGroup(prev =>
-                                                prev.includes(pe.exercise.id)
-                                                    ? prev.filter(id => id !== pe.exercise.id)
-                                                    : [...prev, pe.exercise.id]
-                                            )}
+                                            key={g}
+                                            style={[
+                                                styles.configMuscleChip,
+                                                active && {
+                                                    backgroundColor: color + '22',
+                                                    borderColor: color,
+                                                },
+                                                { paddingVertical: 4, paddingHorizontal: 10, minWidth: 0, marginRight: 8, marginBottom: 0 }
+                                            ]}
+                                            onPress={() => toggleMuscleGroup(idx, g)}
                                         >
-                                            <View style={[styles.checkboxInner, selectedForGroup.includes(pe.exercise.id) && { backgroundColor: '#CCFF00' }]} />
+                                            <Text style={[styles.configMuscleText, active && { color }, { fontSize: 11 }]}>{g}</Text>
                                         </TouchableOpacity>
-                                    ) : pe.supersetId ? (
-                                        <View style={styles.supersetTagPlan}>
-                                            <Text style={styles.supersetTagText}>
-                                                {trainingDays[idx].exercises.filter(e => e.supersetId === pe.supersetId).length >= 3 ? 'TRISERIE' : 'BISERIE'}
-                                            </Text>
-                                            <TouchableOpacity onPress={() => {
-                                                const newDays = [...trainingDays];
-                                                newDays[idx].exercises = newDays[idx].exercises.map(ex => {
-                                                    if (ex.supersetId === pe.supersetId) {
-                                                        return { ...ex, supersetId: undefined };
-                                                    }
-                                                    return ex;
-                                                });
-                                                setTrainingDays(newDays);
-                                            }}>
-                                                <Text style={styles.ungroupTextPlan}>Desagrupar</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    ) : null}
+                                    );
+                                })}
+                            </ScrollView>
 
-                                    <View style={pe.supersetId || groupingDayIdx === idx ? { marginTop: pe.supersetId ? 8 : 20 } : {}}>
-                                        <View style={styles.selExInfo}>
-                                            <View
-                                                style={[
-                                                    styles.selExDot,
-                                                    {
-                                                        backgroundColor:
-                                                            MuscleGroupColors[allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup && allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup !== 'Core' ? allExercises.find(e => e.id === pe.exercise.id)!.muscleGroup : pe.exercise.muscleGroup] || Colors.primary,
-                                                    },
-                                                ]}
-                                            />
-                                            <Text style={styles.selExName} numberOfLines={1}>
-                                                {pe.exercise.name}
-                                            </Text>
-                                            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                                                <TouchableOpacity
-                                                    onPress={() => {
-                                                        Alert.alert(
-                                                            'Cambiar Ejercicio',
-                                                            '¿Cómo deseas agregar el nuevo ejercicio?',
-                                                            [
-                                                                { text: 'Cancelar', style: 'cancel' },
-                                                                { text: 'Dictar por voz', onPress: () => {
-                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
-                                                                    setVoiceModalDayIdx(idx);
-                                                                }},
-                                                                { text: 'Elegir de la lista', onPress: () => {
-                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
-                                                                    setPickerDayIdx(idx);
+                            {day.exercises.length > 0 ? (
+                                <View style={styles.selectedExercisesList}>
+                                    {groupExercises(day.exercises).map((group, groupIdx) => {
+                                        const renderPe = (pe: PlannedExercise, isInsideGroup: boolean, indexInGroup: number, uniqueKey: string) => (
+                                            <View key={uniqueKey} style={[
+                                                styles.selectedExercise,
+                                                isInsideGroup && indexInGroup === 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 } : {},
+                                                isInsideGroup && indexInGroup > 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: 0, marginTop: 0 } : {}
+                                            ]}>
+                                                {/* Grouping Checkbox */}
+                                                {groupingDayIdx === idx && (
+                                                    <TouchableOpacity
+                                                        style={[styles.groupCheckboxPlan, selectedForGroup.includes(pe.exercise.id) && styles.groupCheckboxPlanActive]}
+                                                        onPress={() => setSelectedForGroup(prev =>
+                                                            prev.includes(pe.exercise.id)
+                                                                ? prev.filter(id => id !== pe.exercise.id)
+                                                                : [...prev, pe.exercise.id]
+                                                        )}
+                                                    >
+                                                        <View style={[styles.checkboxInner, selectedForGroup.includes(pe.exercise.id) && { backgroundColor: '#CCFF00' }]} />
+                                                    </TouchableOpacity>
+                                                )}
+
+                                                <View>
+                                                    <View style={styles.selExInfo}>
+                                                        <View
+                                                            style={[
+                                                                styles.selExDot,
+                                                                {
+                                                                    backgroundColor:
+                                                                        MuscleGroupColors[allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup && allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup !== 'Core' ? allExercises.find(e => e.id === pe.exercise.id)!.muscleGroup : pe.exercise.muscleGroup] || Colors.primary,
+                                                                },
+                                                            ]}
+                                                        />
+                                                        <Text style={styles.selExName} numberOfLines={1}>
+                                                            {pe.exercise.name}
+                                                        </Text>
+                                                        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    Alert.alert(
+                                                                        'Cambiar Ejercicio',
+                                                                        '¿Cómo deseas agregar el nuevo ejercicio?',
+                                                                        [
+                                                                            { text: 'Cancelar', style: 'cancel' },
+                                                                            {
+                                                                                text: 'Dictar por voz', onPress: () => {
+                                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
+                                                                                    setVoiceModalDayIdx(idx);
+                                                                                }
+                                                                            },
+                                                                            {
+                                                                                text: 'Elegir de la lista', onPress: () => {
+                                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
+                                                                                    setPickerDayIdx(idx);
+                                                                                }
+                                                                            }
+                                                                        ]
+                                                                    );
                                                                 }}
-                                                            ]
-                                                        );
-                                                    }}
-                                                    style={styles.selExRemove}
-                                                >
-                                                    <Text style={{ fontSize: 10, color: Colors.primary, fontWeight: 'bold' }}>Cambiar</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => toggleExercise(idx, pe.exercise)}
-                                                    style={styles.selExRemove}
-                                                >
-                                                    <X size={10} color={Colors.textMuted} />
-                                                </TouchableOpacity>
-                                            </View>
-                                        </View>
+                                                                style={styles.selExRemove}
+                                                            >
+                                                                <Text style={{ fontSize: 10, color: Colors.primary, fontWeight: 'bold' }}>Cambiar</Text>
+                                                            </TouchableOpacity>
+                                                            <TouchableOpacity
+                                                                onPress={() => toggleExercise(idx, pe.exercise)}
+                                                                style={styles.selExRemove}
+                                                            >
+                                                                <X size={10} color={Colors.textMuted} />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    </View>
 
-                                        <View style={styles.setsRepsRow}>
-                                            <View style={styles.repsInputWrapper}>
-                                                <Text style={styles.stepperLabel}>Series</Text>
-                                                <TextInput
-                                                    style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                    value={String(pe.sets)}
-                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'sets', val)}
-                                                    keyboardType="decimal-pad"
-                                                    placeholder="3"
-                                                    placeholderTextColor={Colors.textMuted}
-                                                />
-                                            </View>
+                                                    <View style={styles.setsRepsRow}>
+                                                        <View style={styles.repsInputWrapper}>
+                                                            <Text style={styles.stepperLabel}>Series</Text>
+                                                            <TextInput
+                                                                style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
+                                                                value={pe.sets === '' ? '' : String(pe.sets)}
+                                                                onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'sets', val)}
+                                                                keyboardType="decimal-pad"
+                                                                placeholder="3"
+                                                                placeholderTextColor={Colors.textMuted}
+                                                            />
+                                                        </View>
 
-                                            <View style={styles.repsRangeContainer}>
-                                                <View style={styles.repsInputWrapper}>
-                                                    <Text style={styles.stepperLabel}>Min</Text>
+                                                        <View style={styles.repsRangeContainer}>
+                                                            <View style={styles.repsInputWrapper}>
+                                                                <Text style={styles.stepperLabel}>Min</Text>
+                                                                <TextInput
+                                                                    style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
+                                                                    value={pe.minReps === '' ? '' : String(pe.minReps)}
+                                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'minReps', val)}
+                                                                    keyboardType="decimal-pad"
+                                                                    placeholder="8"
+                                                                    placeholderTextColor={Colors.textMuted}
+                                                                />
+                                                            </View>
+                                                            <Text style={styles.rangeDash}>-</Text>
+                                                            <View style={styles.repsInputWrapper}>
+                                                                <Text style={styles.stepperLabel}>Max</Text>
+                                                                <TextInput
+                                                                    style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
+                                                                    value={pe.maxReps === '' ? '' : String(pe.maxReps)}
+                                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'maxReps', val)}
+                                                                    keyboardType="decimal-pad"
+                                                                    placeholder="12"
+                                                                    placeholderTextColor={Colors.textMuted}
+                                                                />
+                                                            </View>
+                                                        </View>
+                                                    </View>
+
                                                     <TextInput
-                                                        style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                        value={String(pe.minReps)}
-                                                        onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'minReps', val)}
-                                                        keyboardType="decimal-pad"
-                                                        placeholder="8"
+                                                        style={[styles.instructionInput, { color: '#FFFFFF', borderColor: Colors.border }]}
+                                                        value={pe.instruction}
+                                                        onChangeText={(val) => updateInstruction(idx, pe.exercise.id, val)}
+                                                        placeholder="Instrucciones u objetivo (opcional)..."
                                                         placeholderTextColor={Colors.textMuted}
+                                                        multiline
                                                     />
                                                 </View>
-                                                <Text style={styles.rangeDash}>-</Text>
-                                                <View style={styles.repsInputWrapper}>
-                                                    <Text style={styles.stepperLabel}>Max</Text>
-                                                    <TextInput
-                                                        style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                        value={String(pe.maxReps)}
-                                                        onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'maxReps', val)}
-                                                        keyboardType="decimal-pad"
-                                                        placeholder="12"
-                                                        placeholderTextColor={Colors.textMuted}
-                                                    />
-                                                </View>
                                             </View>
-                                        </View>
+                                        );
 
-                                        <TextInput
-                                            style={[styles.instructionInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                            value={pe.instruction}
-                                            onChangeText={(val) => updateInstruction(idx, pe.exercise.id, val)}
-                                            placeholder="Instrucciones u objetivo (opcional)..."
-                                            placeholderTextColor={Colors.textMuted}
-                                            multiline
-                                        />
-                                    </View>
+                                        if (group.isGroup) {
+                                            const groupColor = SUPERSET_COLORS[groupIdx % SUPERSET_COLORS.length];
+                                            const label = group.items.length >= 3 ? 'TRISERIE ' + (groupIdx + 1) : 'BISERIE ' + (groupIdx + 1);
+                                            return (
+                                                <View key={'group-' + group.id + '-' + groupIdx} style={[styles.supersetWrapperPlan, { borderLeftColor: groupColor }]}>
+                                                    <View style={[styles.supersetHeaderPlanNew, { backgroundColor: groupColor }]}>
+                                                        <Text style={styles.supersetLabelText}>{label}</Text>
+                                                        <TouchableOpacity onPress={() => {
+                                                            const newDays = [...trainingDays];
+                                                            newDays[idx].exercises = newDays[idx].exercises.map(ex => {
+                                                                if (ex.supersetId === group.id) {
+                                                                    return { ...ex, supersetId: undefined };
+                                                                }
+                                                                return ex;
+                                                            });
+                                                            setTrainingDays(newDays);
+                                                        }}>
+                                                            <Text style={styles.ungroupTextPlanSmall}>Desagrupar</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                    {group.items.map((pe, i) => renderPe(pe, true, i, 'pe-' + group.id + '-' + pe.exercise.id + '-' + i))}
+                                                </View>
+                                            );
+                                        } else {
+                                            return renderPe(group.items[0], false, 0, 'pe-single-' + group.items[0].exercise.id + '-' + groupIdx);
+                                        }
+                                    })}
                                 </View>
-                            ))}
-                        </View>
-                    ) : day.muscleGroups.length > 0 ? (
-                        <Text style={styles.noExercisesText}>
-                            Toca "Añadir" para elegir ejercicios
-                        </Text>
-                    ) : null}
+                            ) : day.muscleGroups.length > 0 ? (
+                                <Text style={styles.noExercisesText}>
+                                    Toca "Añadir" para elegir ejercicios
+                                </Text>
+                            ) : null}
 
-                    {/* Biserie/Triserie Controls for Step 4 */}
-                    {day.exercises.length >= 2 && (
-                        <View style={styles.groupModeBarPlan}>
-                            {groupingDayIdx === idx ? (
-                                <>
-                                    <TouchableOpacity style={styles.cancelGroupBtn} onPress={() => { setGroupingDayIdx(null); setSelectedForGroup([]); }}>
-                                        <Text style={styles.cancelGroupText}>Cancelar</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.confirmGroupBtn, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { backgroundColor: '#CCFF00' } : { backgroundColor: Colors.surfaceLight }]}
-                                        onPress={() => {
-                                            if (selectedForGroup.length < 2 || selectedForGroup.length > 3) {
-                                                Alert.alert('Aviso', 'Selecciona 2 (Biserie) o 3 (Triserie) ejercicios.');
-                                                return;
-                                            }
-                                            const supersetId = 'super_' + Date.now();
-                                            const newDays = [...trainingDays];
-                                            newDays[idx].exercises = newDays[idx].exercises.map(ex => {
-                                                if (selectedForGroup.includes(ex.exercise.id)) {
-                                                    return { ...ex, supersetId };
-                                                }
-                                                return ex;
-                                            });
-                                            setTrainingDays(newDays);
-                                            setGroupingDayIdx(null);
-                                            setSelectedForGroup([]);
-                                        }}
-                                    >
-                                        <Text style={[styles.confirmGroupText, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { color: '#000' } : { color: Colors.textMuted }]}>
-                                            Agrupar ({selectedForGroup.length})
-                                        </Text>
-                                    </TouchableOpacity>
-                                </>
-                            ) : (
-                                <TouchableOpacity style={styles.startGroupBtn} onPress={() => { setGroupingDayIdx(idx); setSelectedForGroup([]); }}>
-                                    <Plus size={16} color={Colors.primary} />
-                                    <Text style={styles.startGroupText}>Crear Biserie / Triserie</Text>
-                                </TouchableOpacity>
+                            {/* Biserie/Triserie Controls for Step 4 */}
+                            {day.exercises.length >= 2 && (
+                                <View style={styles.groupModeBarPlan}>
+                                    {groupingDayIdx === idx ? (
+                                        <>
+                                            <TouchableOpacity style={styles.cancelGroupBtn} onPress={() => { setGroupingDayIdx(null); setSelectedForGroup([]); }}>
+                                                <Text style={styles.cancelGroupText}>Cancelar</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.confirmGroupBtn, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { backgroundColor: '#CCFF00' } : { backgroundColor: Colors.surfaceLight }]}
+                                                onPress={() => {
+                                                    if (selectedForGroup.length < 2 || selectedForGroup.length > 3) {
+                                                        Alert.alert('Aviso', 'Selecciona 2 (Biserie) o 3 (Triserie) ejercicios.');
+                                                        return;
+                                                    }
+                                                    const supersetId = 'super_' + Date.now();
+                                                    const newDays = [...trainingDays];
+                                                    newDays[idx].exercises = newDays[idx].exercises.map(ex => {
+                                                        if (selectedForGroup.includes(ex.exercise.id)) {
+                                                            return { ...ex, supersetId };
+                                                        }
+                                                        return ex;
+                                                    });
+                                                    setTrainingDays(newDays);
+                                                    setGroupingDayIdx(null);
+                                                    setSelectedForGroup([]);
+                                                }}
+                                            >
+                                                <Text style={[styles.confirmGroupText, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { color: '#000' } : { color: Colors.textMuted }]}>
+                                                    Agrupar ({selectedForGroup.length})
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </>
+                                    ) : (
+                                        <TouchableOpacity style={styles.startGroupBtn} onPress={() => { setGroupingDayIdx(idx); setSelectedForGroup([]); }}>
+                                            <Plus size={16} color={Colors.primary} />
+                                            <Text style={styles.startGroupText}>Crear Biserie / Triserie</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             )}
-                        </View>
-                    )}
                         </>
                     )}
                 </View>
             ))}
-            <TouchableOpacity 
-                style={[styles.addExerciseBtn, { alignSelf: 'center', marginVertical: 16 }]} 
+            <TouchableOpacity
+                style={[styles.addExerciseBtn, { alignSelf: 'center', marginVertical: 16 }]}
                 onPress={() => {
-                     setTrainingDays(prev => {
-                         const newDays = [...prev, { dayNumber: prev.length + 1, label: `Día ${prev.length + 1}`, muscleGroups: [], targetVolumes: {}, exercises: [] }];
-                         setDaysPerWeek(newDays.length);
-                         return newDays;
-                     });
+                    setTrainingDays(prev => {
+                        const newDays = [...prev, { dayNumber: prev.length + 1, label: `Día ${prev.length + 1}`, muscleGroups: [], targetVolumes: {}, exercises: [] }];
+                        setDaysPerWeek(newDays.length);
+                        return newDays;
+                    });
                 }}
             >
                 <Plus size={16} color="#000" />
                 <Text style={styles.addExerciseBtnText}>Añadir Día de Entrenamiento</Text>
             </TouchableOpacity>
 
-            <View style={{ marginTop: 20, paddingHorizontal: 4 }}>
-                <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Especificaciones del Plan (Opcional)</Text>
-                <TextInput
-                    style={{
-                        backgroundColor: Colors.surface,
-                        color: '#FFF',
-                        borderColor: Colors.border,
-                        borderWidth: 1,
-                        borderRadius: 12,
-                        padding: 16,
-                        minHeight: 100,
-                        textAlignVertical: 'top'
-                    }}
-                    placeholder="Ej. Descansar 90s entre ejercicios, enfocar en excéntrica..."
-                    placeholderTextColor={Colors.textMuted}
-                    value={planNotes}
-                    onChangeText={setPlanNotes}
-                    multiline
-                />
-            </View>
 
             <View style={{ height: 20 }} />
         </ScrollView>
@@ -2090,7 +2153,7 @@ export default function PlanScreen() {
     return (
         <KeyboardAvoidingView
             style={[styles.container, { backgroundColor: Colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
         >
 
@@ -2195,7 +2258,7 @@ export default function PlanScreen() {
                 <View style={styles.wizardOverlay}>
                     <KeyboardAvoidingView
                         style={styles.wizardContent}
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     >
                         <View style={styles.wizardHandle} />
 
@@ -2561,8 +2624,9 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.surface,
         borderTopLeftRadius: borderRadius.xl,
         borderTopRightRadius: borderRadius.xl,
-        maxHeight: '92%',
-        minHeight: '75%',
+        maxHeight: '100%',
+        height: '100%',
+        paddingTop: Platform.OS === 'ios' ? 40 : 10,
     },
     wizardHandle: {
         width: 36,
@@ -3669,35 +3733,31 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
     },
-    supersetTagPlan: {
+    supersetWrapperPlan: {
+        borderLeftWidth: 4,
+        borderRadius: borderRadius.md,
+        paddingLeft: 0,
+        marginBottom: 10,
+        backgroundColor: Colors.cardBg,
+        overflow: 'hidden',
+    },
+    supersetHeaderPlanNew: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        backgroundColor: 'rgba(204, 255, 0, 0.15)',
         paddingHorizontal: Spacing.sm,
         paddingVertical: 6,
-        borderTopLeftRadius: 6,
-        borderTopRightRadius: 6,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 5,
     },
-    supersetTagText: {
+    supersetLabelText: {
         fontSize: 10,
         fontWeight: '900',
-        color: '#CCFF00',
+        color: '#FFF',
         letterSpacing: 1,
     },
-    ungroupTextPlan: {
+    ungroupTextPlanSmall: {
         fontSize: 10,
         fontWeight: '700',
-        color: Colors.text,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
+        color: 'rgba(255,255,255,0.8)',
     },
     groupModeBarPlan: {
         flexDirection: 'row',

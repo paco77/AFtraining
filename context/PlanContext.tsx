@@ -103,12 +103,14 @@ const mapApiPlanToFrontend = (apiPlan: any): MonthlyPlan => {
         year: apiPlan.year,
         daysPerWeek: apiPlan.days_per_week,
         splitType: apiPlan.split_type,
+        comment: apiPlan.comment,
         days: (apiPlan.training_days || apiPlan.trainingDays || []).map((td: any) => ({
             id: td.id ? String(td.id) : undefined,
             dayNumber: td.day_number,
             label: td.label,
             muscleGroups: td.muscle_groups || [],
             targetVolumes: td.target_volumes || {},
+            comment: td.comment,
             exercises: (td.planned_exercises || td.exercises || td.plannedExercises || []).map((pe: any) => ({
                 id: pe.id ? String(pe.id) : undefined,
                 exercise: mapApiExerciseToFrontend(pe.exercise || {}),
@@ -228,19 +230,22 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 year: planData.year,
                 days_per_week: planData.daysPerWeek,
                 split_type: planData.splitType,
+                comment: planData.comment,
                 days: planData.days.map(d => ({
                     label: d.label,
                     day_number: d.dayNumber,
                     muscle_groups: d.muscleGroups,
                     target_volumes: d.targetVolumes,
+                    comment: d.comment,
                     exercises: d.exercises.map(ex => ({
                         exercise_id: ex.exercise.id,
                         name: ex.exercise.name,
                         muscle_group: ex.exercise.muscleGroup,
-                        sets: ex.sets,
-                        min_reps: ex.minReps,
-                        max_reps: ex.maxReps,
-                        instruction: ex.instruction
+                        sets: Number(ex.sets) || 0,
+                        min_reps: Number(ex.minReps) || 0,
+                        max_reps: Number(ex.maxReps) || 0,
+                        instruction: ex.instruction,
+                        superset_id: ex.supersetId
                     }))
                 }))
             };
@@ -261,21 +266,24 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 year: planData.year,
                 days_per_week: planData.daysPerWeek,
                 split_type: planData.splitType,
+                comment: planData.comment,
                 days: planData.days?.map(d => ({
                     id: d.id,
                     label: d.label,
                     day_number: d.dayNumber,
                     muscle_groups: d.muscleGroups,
                     target_volumes: d.targetVolumes,
+                    comment: d.comment,
                     exercises: d.exercises.map(ex => ({
                         id: ex.id,
                         exercise_id: ex.exercise.id,
                         name: ex.exercise.name,
                         muscle_group: ex.exercise.muscleGroup,
-                        sets: ex.sets,
-                        min_reps: ex.minReps,
-                        max_reps: ex.maxReps,
-                        instruction: ex.instruction
+                        sets: Number(ex.sets) || 0,
+                        min_reps: Number(ex.minReps) || 0,
+                        max_reps: Number(ex.maxReps) || 0,
+                        instruction: ex.instruction,
+                        superset_id: ex.supersetId
                     }))
                 }))
             };

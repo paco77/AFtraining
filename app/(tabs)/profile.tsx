@@ -407,9 +407,25 @@ export default function ProfileScreen() {
             <TouchableOpacity 
                 style={styles.logoutButton} 
                 activeOpacity={0.8}
-                onPress={async () => {
-                    await logout();
-                    router.replace('/login');
+                onPress={() => {
+                    Alert.alert(
+                        "Cerrar Sesión",
+                        "¿Está seguro que desea finalizar sesión?",
+                        [
+                            {
+                                text: "Cancelar",
+                                style: "cancel"
+                            },
+                            {
+                                text: "Sí, finalizar",
+                                style: "destructive",
+                                onPress: async () => {
+                                    await logout();
+                                    router.replace('/login');
+                                }
+                            }
+                        ]
+                    );
                 }}
             >
                 <LogOut size={20} color={Colors.danger} />
