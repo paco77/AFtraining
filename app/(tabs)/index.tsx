@@ -25,7 +25,9 @@ import {
   PlayCircle,
   Settings,
   User as UserIcon,
-  Users
+  Users,
+  Search,
+  X
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
@@ -37,7 +39,11 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -51,6 +57,15 @@ export default function HomeScreen() {
   const [bgImage, setBgImage] = useState<string | null>(null);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const scrollViewRef = React.useRef<ScrollView>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -105,12 +120,15 @@ export default function HomeScreen() {
   const lastLogDay = lastLog ? activePlan?.days.find(d => d.dayNumber === lastLog.dayNumber) : null;
 
   const content = (
-    <ScrollView
-      style={[styles.container, !bgImage && { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-    >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={[styles.container, !bgImage && { backgroundColor: colors.background }]}
+        contentContainerStyle={[styles.content, { paddingBottom: keyboardVisible ? 300 : 0 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        keyboardShouldPersistTaps="handled"
+      >
       {/* ── Greeting ────────────────────────────────────────── */}
       <View style={{ marginBottom: Spacing.lg, alignItems: 'center' }}>
         {currentUser?.profilePhotoUrl ? (
@@ -271,11 +289,36 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={{ paddingHorizontal: Spacing.lg, marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: colors.border }}>
+              <Search size={18} color={colors.textMuted} />
+              <TextInput
+                style={{ flex: 1, marginLeft: 8, color: colors.text, fontSize: 14 }}
+                placeholder="Buscar por nombre o usuario..."
+                placeholderTextColor={colors.textMuted}
+                value={clientSearchQuery}
+                onChangeText={setClientSearchQuery}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 100);
+                }}
+              />
+              {clientSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setClientSearchQuery('')}>
+                  <X size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
           <View style={styles.clientsList}>
             {clients.length === 0 ? (
               <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No tienes clientes todavía.</Text>
+            ) : clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).length === 0 ? (
+              <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No se encontraron clientes.</Text>
             ) : (
-              clients.map(client => {
+              clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).map(client => {
                 const isExpanded = expandedClientId === client.id;
                 return (
                   <View key={client.id} style={styles.clientAccordionCard}>
@@ -535,7 +578,8 @@ export default function HomeScreen() {
           <View style={{ height: 40 }} />
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 
   return content;

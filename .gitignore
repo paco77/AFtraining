@@ -25,6 +25,10 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*_debug.json
+test-*.js
+analyze-debug.js
+curl_check.txt
 
 # macOS
 .DS_Store

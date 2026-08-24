@@ -1,16 +1,19 @@
 import { Colors, Fonts, borderRadius, Spacing } from '@/constants/theme';
 import { useUser } from '@/context/UserContext';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronRight, Dumbbell, Info, Plus, User, Users } from 'lucide-react-native';
-import React from 'react';
+import { CalendarDays, ChevronRight, Dumbbell, Info, Plus, User, Users, Search, X } from 'lucide-react-native';
+import React, { useState } from 'react';
 import {
     Dimensions,
     FlatList,
     Image,
     StyleSheet,
-    Text,
     TouchableOpacity,
-    View
+    View,
+    TextInput,
+    KeyboardAvoidingView,
+    Platform,
+    Keyboard
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -18,6 +21,19 @@ const { width } = Dimensions.get('window');
 export default function ClientsScreen() {
     const router = useRouter();
     const { clients } = useUser();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+    React.useEffect(() => {
+        const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+        const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+        return () => { showSub.remove(); hideSub.remove(); };
+    }, []);
+
+    const filteredClients = clients.filter(c => 
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (c.username && c.username.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
 
     const renderClientCard = ({ item }: { item: any }) => (
         <TouchableOpacity
@@ -97,7 +113,7 @@ export default function ClientsScreen() {
     );
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.header}>
                 <View />
                 <TouchableOpacity
@@ -110,7 +126,25 @@ export default function ClientsScreen() {
                 </TouchableOpacity>
             </View>
 
-            {clients.length === 0 ? (
+            <View style={{ paddingHorizontal: Spacing.md, marginTop: 10, marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: Colors.border }}>
+                    <Search size={18} color={Colors.textMuted} />
+                    <TextInput
+                        style={{ flex: 1, marginLeft: 8, color: Colors.text, fontSize: 14 }}
+                        placeholder="Buscar por nombre o usuario..."
+                        placeholderTextColor={Colors.textMuted}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <X size={16} color={Colors.textMuted} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+
+            {filteredClients.length === 0 ? (
                 <View style={styles.emptyContainer}>
                     <View style={styles.emptyIcon}>
                         <Users size={48} color={Colors.textMuted} />
@@ -120,13 +154,14 @@ export default function ClientsScreen() {
                 </View>
             ) : (
                 <FlatList
-                    data={clients}
+                    data={filteredClients}
                     keyExtractor={(item) => item.id}
                     renderItem={renderClientCard}
-                    contentContainerStyle={styles.list}
+                    contentContainerStyle={[styles.list, { paddingBottom: keyboardVisible ? 300 : 0 }]}
+                    keyboardShouldPersistTaps="handled"
                 />
             )}
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 

@@ -42,6 +42,38 @@ interface Meal {
     foods: FoodItem[];
 }
 
+const parseQuantity = (str: string): number => {
+    if (!str || typeof str !== 'string') return 0;
+    const cleaned = str.trim().replace(',', '.');
+    if (!cleaned) return 0;
+
+    // Check for mixed fraction like "1 1/2", "2 1/3", "1-1/2"
+    if (cleaned.includes(' ') || cleaned.includes('-')) {
+        const parts = cleaned.split(/[\s-]+/).filter(Boolean);
+        if (parts.length === 2) {
+            const whole = parseFloat(parts[0]);
+            const frac = parseQuantity(parts[1]);
+            if (!isNaN(whole) && !isNaN(frac)) {
+                return whole + frac;
+            }
+        }
+    }
+
+    // Check for simple fraction like "1/2", "1/3", "1/4", "3/4"
+    if (cleaned.includes('/')) {
+        const [numStr, denStr] = cleaned.split('/');
+        const num = parseFloat(numStr);
+        const den = parseFloat(denStr);
+        if (!isNaN(num) && !isNaN(den) && den !== 0) {
+            return num / den;
+        }
+        return 0;
+    }
+
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+};
+
 export default function NutritionCalculatorScreen() {
     const { id, planId, name: passedName, description: passedDesc } = useLocalSearchParams();
     const router = useRouter();
@@ -223,15 +255,16 @@ export default function NutritionCalculatorScreen() {
 
     // Diet Builder Logic
     const addMealItem = () => {
-        setMeals([...meals, { id: `meal-${Date.now()}`, name: 'Nueva Comida', foods: [] }]);
+        setMeals(prev => [...prev, { id: `meal-${Date.now()}`, name: '', foods: [] }]);
     };
 
     const removeMealItem = (id: string) => {
-        setMeals(meals.filter(m => m.id !== id));
+        Keyboard.dismiss();
+        setMeals(prev => prev.filter(m => m.id !== id));
     };
 
     const renameMealItem = (id: string, newName: string) => {
-        setMeals(meals.map(m => m.id === id ? { ...m, name: newName } : m));
+        setMeals(prev => prev.map(m => m.id === id ? { ...m, name: newName } : m));
     };
 
     const openSearchForMeal = (mealId: string) => {
@@ -247,18 +280,32 @@ export default function NutritionCalculatorScreen() {
         try {
             const data = await searchFatSecretFoods(searchQuery);
             console.log("Raw FatSecret Response:", JSON.stringify(data, null, 2));
-            const foods = data || [];
-            setSearchResults(Array.isArray(foods) ? foods : [foods]);
+            
+            let list: any[] = [];
+            if (Array.isArray(data)) {
+                list = data;
+            } else if (data?.foods?.food) {
+                list = Array.isArray(data.foods.food) ? data.foods.food : [data.foods.food];
+            } else if (data?.food) {
+                list = Array.isArray(data.food) ? data.food : [data.food];
+            } else if (data?.data && Array.isArray(data.data)) {
+                list = data.data;
+            } else if (data && typeof data === 'object' && data.food_name) {
+                list = [data];
+            }
+            
+            setSearchResults(list);
         } catch (error) {
+            console.error('Error searching foods:', error);
             Alert.alert('Error', 'No se pudieron buscar los alimentos');
         } finally {
             setIsSearching(false);
         }
     };
 
-    const parseFatSecretNutrients = (description: string) => {
+    const parseFatSecretNutrients = (description: any) => {
         let macrosDict = { calories: 0, fat: 0, carbs: 0, protein: 0 };
-        if (!description) return macrosDict;
+        if (!description || typeof description !== 'string') return macrosDict;
 
         const matchCalories = description.match(/(?:Calories|Calorías):\s*([\d.,]+)\s*kcal/i);
         const matchFat = description.match(/(?:Fat|Grasa):\s*([\d.,]+)\s*g/i);
@@ -274,16 +321,16 @@ export default function NutritionCalculatorScreen() {
     };
 
     const addFoodToMeal = (foodData: any) => {
-        const parsed = parseFatSecretNutrients(foodData.food_description);
+        const parsed = parseFatSecretNutrients(foodData?.food_description);
 
         const newFood: FoodItem = {
-            id: foodData.food_id?.toString() || Math.random().toString(),
-            name: foodData.food_name || 'Unknown Food',
+            id: foodData?.food_id?.toString() || `fs_${Date.now()}_${Math.random()}`,
+            name: typeof foodData?.food_name === 'string' ? foodData.food_name : 'Alimento',
             servingSize: '100g',
-            calories: parsed.calories,
-            fat: parsed.fat,
-            carbs: parsed.carbs,
-            protein: parsed.protein,
+            calories: parsed.calories || 0,
+            fat: parsed.fat || 0,
+            carbs: parsed.carbs || 0,
+            protein: parsed.protein || 0,
             unit: 'g',
             amountMultiplier: 1,
             amountText: '100',
@@ -307,11 +354,10 @@ export default function NutritionCalculatorScreen() {
             return;
         }
 
-        const quantityParsed = parseFloat(manualFood.quantity.replace(',', '.'));
-        const value = isNaN(quantityParsed) ? 0 : quantityParsed;
+        const value = parseQuantity(manualFood.quantity);
 
         let amountMultiplier = 1;
-        if (manualFood.unit === 'g') {
+        if (manualFood.unit === 'g' || manualFood.unit === 'ml') {
             amountMultiplier = value / 100;
         } else {
             amountMultiplier = value;
@@ -320,7 +366,7 @@ export default function NutritionCalculatorScreen() {
         const newFood: FoodItem = {
             id: `manual_${Date.now()}`,
             name: manualFood.name,
-            servingSize: manualFood.unit === 'g' ? '100g' : `1 ${manualFood.unit}`,
+            servingSize: (manualFood.unit === 'g' || manualFood.unit === 'ml') ? `100${manualFood.unit}` : `1 ${manualFood.unit}`,
             calories: 0,
             protein: 0,
             carbs: 0,
@@ -342,10 +388,12 @@ export default function NutritionCalculatorScreen() {
         setManualFood({ name: '', quantity: '', unit: 'g' });
         showToast.success('Alimento manual añadido');
     };
+
     const removeFoodFromMeal = (mealId: string, index: number) => {
+        Keyboard.dismiss();
         setMeals(prev => prev.map(m => {
             if (m.id === mealId) {
-                const newFoods = [...m.foods];
+                const newFoods = [...(m.foods || [])];
                 newFoods.splice(index, 1);
                 return { ...m, foods: newFoods };
             }
@@ -356,16 +404,18 @@ export default function NutritionCalculatorScreen() {
     const updateFoodAmount = (mealId: string, index: number, textValue: string) => {
         setMeals(prev => prev.map(m => {
             if (m.id === mealId) {
-                const newFoods = [...m.foods];
-                newFoods[index].amountText = textValue;
-                const parsed = parseFloat(textValue.replace(',', '.'));
-                const value = isNaN(parsed) ? 0 : parsed;
+                const newFoods = m.foods.map((food, fIdx) => {
+                    if (fIdx !== index) return food;
+                    const updated = { ...food, amountText: textValue };
+                    const value = parseQuantity(textValue);
 
-                if (newFoods[index].unit === 'pz' || newFoods[index].unit === 'porcion') {
-                    newFoods[index].amountMultiplier = value;
-                } else {
-                    newFoods[index].amountMultiplier = value / 100;
-                }
+                    if (['pz', 'porcion', 'taza'].includes(updated.unit || '')) {
+                        updated.amountMultiplier = value;
+                    } else {
+                        updated.amountMultiplier = value / 100;
+                    }
+                    return updated;
+                });
                 return { ...m, foods: newFoods };
             }
             return m;
@@ -380,14 +430,18 @@ export default function NutritionCalculatorScreen() {
                 const currentUnit = currentFood.unit || 'g';
 
                 if (currentUnit === 'g') {
+                    currentFood.unit = 'ml';
+                } else if (currentUnit === 'ml') {
                     currentFood.unit = 'pz';
                 } else if (currentUnit === 'pz') {
                     currentFood.unit = 'porcion';
+                } else if (currentUnit === 'porcion') {
+                    currentFood.unit = 'taza';
                 } else {
                     currentFood.unit = 'g';
                 }
 
-                if (currentFood.unit === 'g') {
+                if (currentFood.unit === 'g' || currentFood.unit === 'ml') {
                     currentFood.amountMultiplier = 1;
                     currentFood.amountText = '100';
                 } else {
@@ -445,13 +499,13 @@ export default function NutritionCalculatorScreen() {
     };
 
     // Calculate Global Accumulators
-    const totalAccumulated = meals.reduce((acc, meal) => {
-        meal.foods.forEach(f => {
+    const totalAccumulated = (meals || []).reduce((acc, meal) => {
+        (meal?.foods || []).forEach(f => {
             const mult = (f.amountMultiplier === undefined || isNaN(f.amountMultiplier)) ? 1 : f.amountMultiplier;
-            acc.calories += (f.calories || 0) * mult;
-            acc.protein += (f.protein || 0) * mult;
-            acc.carbs += (f.carbs || 0) * mult;
-            acc.fat += (f.fat || 0) * mult;
+            acc.calories += (Number(f.calories) || 0) * mult;
+            acc.protein += (Number(f.protein) || 0) * mult;
+            acc.carbs += (Number(f.carbs) || 0) * mult;
+            acc.fat += (Number(f.fat) || 0) * mult;
         });
         return {
             calories: isNaN(acc.calories) ? 0 : acc.calories,
@@ -470,7 +524,7 @@ export default function NutritionCalculatorScreen() {
     return (
         <KeyboardAvoidingView
             style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             <Stack.Screen options={{ headerShown: false }} />
@@ -489,7 +543,7 @@ export default function NutritionCalculatorScreen() {
                 )}
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 {/* 1. Form Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>1. Datos Básicos</Text>
@@ -696,34 +750,43 @@ export default function NutritionCalculatorScreen() {
                         </View>
 
                         <View style={styles.mealsContainer}>
-                            {meals.map(meal => (
-                                <View key={meal.id} style={styles.mealCard}>
-                                    <View style={styles.mealHeader}>
-                                        <Text style={styles.mealName}>{meal.name}</Text>
+                            {(!meals || meals.length === 0) ? (
+                                <View style={{ padding: 20, alignItems: 'center' }}>
+                                    <Text style={{ color: Colors.textMuted, fontSize: 14 }}>
+                                        No hay tiempos de comida configurados.
+                                    </Text>
+                                </View>
+                            ) : (
+                                meals.map(meal => (
+                                    <View key={meal.id} style={styles.mealCard}>
+                                        <View style={styles.mealHeader}>
+                                            <Text style={styles.mealName}>{meal.name || 'Comida sin nombre'}</Text>
 
-                                        {/* Subtotal of Meal */}
-                                        <View style={styles.mealSubtotals}>
-                                            <Text style={styles.mealSubText}>
-                                                {meal.foods.reduce((acc, f) => acc + ((f.calories || 0) * (isNaN(f.amountMultiplier as any) ? 1 : (f.amountMultiplier || 1))), 0).toFixed(0)} kcal
-                                            </Text>
+                                            {/* Subtotal of Meal */}
+                                            <View style={styles.mealSubtotals}>
+                                                <Text style={styles.mealSubText}>
+                                                    {(meal?.foods || []).reduce((acc, f) => acc + ((Number(f.calories) || 0) * (isNaN(f.amountMultiplier as any) ? 1 : (f.amountMultiplier || 1))), 0).toFixed(0)} kcal
+                                                </Text>
+                                            </View>
                                         </View>
-                                    </View>
 
-                                    {meal.foods.length > 0 && (
-                                        <View style={styles.foodList}>
-                                            {meal.foods.map((food, idx) => (
+                                        {(meal?.foods && meal.foods.length > 0) && (
+                                            <View style={styles.foodList}>
+                                                {meal.foods.map((food, idx) => (
                                                 <View key={idx} style={styles.foodRow}>
                                                     <View style={{ flex: 1, paddingRight: 10 }}>
                                                         <Text style={styles.foodName}>{food.name}</Text>
                                                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                                                             <TextInput
                                                                 style={styles.gramsInput}
-                                                                keyboardType="decimal-pad"
-                                                                value={String(food.amountText != null ? food.amountText : ((food.unit === 'pz' || food.unit === 'porcion') ? (food.amountMultiplier || 1) : ((food.amountMultiplier || 1) * 100)))}
+                                                                keyboardType="numbers-and-punctuation"
+                                                                value={String(food.amountText != null ? food.amountText : ((['pz', 'porcion', 'taza'].includes(food.unit || 'g')) ? (food.amountMultiplier || 1) : ((food.amountMultiplier || 1) * 100)))}
                                                                 onChangeText={(val) => updateFoodAmount(meal.id, idx, val)}
+                                                                placeholder="Cant."
+                                                                placeholderTextColor={Colors.textMuted}
                                                             />
                                                             <TouchableOpacity onPress={() => toggleFoodUnit(meal.id, idx)} style={styles.unitToggle}>
-                                                                <Text style={styles.gramsLabel}>{food.unit === 'pz' ? 'pz' : food.unit === 'porcion' ? 'porc' : 'g'}</Text>
+                                                                <Text style={styles.gramsLabel}>{food.unit === 'porcion' ? 'porc' : (food.unit || 'g')}</Text>
                                                             </TouchableOpacity>
                                                         </View>
                                                     </View>
@@ -748,7 +811,7 @@ export default function NutritionCalculatorScreen() {
                                         <Text style={styles.addFoodText}>Añadir Artículo</Text>
                                     </TouchableOpacity>
                                 </View>
-                            ))}
+                            )))}
                         </View>
                     </View>
                 )}
@@ -812,15 +875,17 @@ export default function NutritionCalculatorScreen() {
                             {isSearching ? (
                                 <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
                             ) : (
-                                <ScrollView style={styles.searchResults}>
+                                <ScrollView style={styles.searchResults} keyboardShouldPersistTaps="handled">
                                     {searchResults.map((item, idx) => (
                                         <TouchableOpacity
-                                            key={idx}
+                                            key={item?.food_id?.toString() || `search_item_${idx}`}
                                             style={styles.searchItem}
                                             onPress={() => addFoodToMeal(item)}
                                         >
-                                            <Text style={styles.searchItemName}>{item.food_name}</Text>
-                                            <Text style={styles.searchItemDesc}>{item.food_description}</Text>
+                                            <Text style={styles.searchItemName}>{typeof item?.food_name === 'string' ? item.food_name : 'Alimento'}</Text>
+                                            {item?.food_description ? (
+                                                <Text style={styles.searchItemDesc}>{typeof item.food_description === 'string' ? item.food_description : ''}</Text>
+                                            ) : null}
                                         </TouchableOpacity>
                                     ))}
                                     {searchResults.length === 0 && searchQuery !== '' && (
@@ -830,7 +895,7 @@ export default function NutritionCalculatorScreen() {
                             )}
                         </>
                     ) : (
-                        <ScrollView style={styles.searchResults} contentContainerStyle={{ paddingHorizontal: 20 }}>
+                        <ScrollView style={styles.searchResults} contentContainerStyle={{ paddingHorizontal: 20 }} keyboardShouldPersistTaps="handled">
                             <Text style={styles.label}>Nombre del Alimento:</Text>
                             <TextInput style={styles.input} placeholder="Ej. Avena cocida" placeholderTextColor={Colors.textMuted} value={manualFood.name} onChangeText={(val) => setManualFood(prev => ({ ...prev, name: val }))} />
 
@@ -838,13 +903,22 @@ export default function NutritionCalculatorScreen() {
                             <View style={styles.pickerContainer}>
                                 <Picker selectedValue={manualFood.unit} onValueChange={(val) => setManualFood(prev => ({ ...prev, unit: val }))} style={styles.picker}>
                                     <Picker.Item label="gramos (g)" value="g" />
+                                    <Picker.Item label="mililitros (ml)" value="ml" />
                                     <Picker.Item label="pieza (pz)" value="pz" />
-                                    <Picker.Item label="Porción" value="porcion" />
+                                    <Picker.Item label="Porción (porc)" value="porcion" />
+                                    <Picker.Item label="Taza" value="taza" />
                                 </Picker>
                             </View>
 
                             <Text style={styles.label}>Cantidad:</Text>
-                            <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="Ej. 1, 2.5, 150..." placeholderTextColor={Colors.textMuted} value={manualFood.quantity} onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} />
+                            <TextInput 
+                                style={styles.input} 
+                                keyboardType="numbers-and-punctuation" 
+                                placeholder="Ej. 1, 1/2, 1/3, 1 1/2, 150..." 
+                                placeholderTextColor={Colors.textMuted} 
+                                value={manualFood.quantity} 
+                                onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} 
+                            />
 
                             <TouchableOpacity style={styles.calcBtn} onPress={addManualFoodToMeal}>
                                 <Plus size={18} color="#fff" />
@@ -1174,9 +1248,9 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: Colors.border,
         borderRadius: 6,
-        paddingHorizontal: 8,
+        paddingHorizontal: 6,
         paddingVertical: 2,
-        width: 60,
+        minWidth: 60,
         textAlign: 'center',
         fontSize: 12,
         backgroundColor: Colors.surface,
