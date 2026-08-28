@@ -37,6 +37,14 @@ export interface NutritionPlan {
     description?: string;
     tdee?: number;
     target_calories?: number;
+    gender?: string;
+    weight?: number | string;
+    height?: number | string;
+    age?: number | string;
+    activity_level?: number | string;
+    formula?: string;
+    objective?: string;
+    caloric_adjustment?: number | string;
     total_calories: number;
     total_protein: number;
     total_carbs: number;

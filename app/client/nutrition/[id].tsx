@@ -81,7 +81,7 @@ export default function NutritionCalculatorScreen() {
     const { plans, fetchPlans } = useNutrition();
     const [isSaving, setIsSaving] = useState(false);
 
-    const client = clients.find(c => c.id === id);
+    const client = clients.find(c => String(c.id) === String(id));
 
     // Form inputs
     const [gender, setGender] = useState('Hombre');
@@ -460,24 +460,24 @@ export default function NutritionCalculatorScreen() {
         setIsSaving(true);
         try {
             const planData = {
-                client_id: id === 'template' ? null : id,
-                name: passedName ? String(passedName) : undefined,
+                client_id: id === 'template' || !id ? null : (isNaN(Number(id)) ? id : Number(id)),
+                name: passedName ? String(passedName) : (client?.name ? `Plan Nutricional - ${client.name}` : undefined),
                 description: passedDesc ? String(passedDesc) : undefined,
                 gender,
-                weight: parseFloat(weight),
-                height: parseFloat(height),
-                age: parseInt(age),
-                activity_level: parseFloat(activityLevel),
+                weight: parseFloat(weight) || 0,
+                height: parseFloat(height) || 0,
+                age: parseInt(age) || 0,
+                activity_level: parseFloat(activityLevel) || 1.2,
                 formula,
                 objective,
-                caloric_adjustment: parseFloat(caloricAdjustment),
-                tdee,
-                target_calories: targetCalories,
-                protein_per_kg: parseFloat(proteinPerKg),
-                lipids_per_kg: parseFloat(lipidsPerKg),
-                protein_grams: macros.proteinGrams,
-                lipid_grams: macros.lipidGrams,
-                carb_grams: macros.carbGrams,
+                caloric_adjustment: parseFloat(caloricAdjustment) || 0,
+                tdee: tdee || 0,
+                target_calories: targetCalories || 0,
+                protein_per_kg: parseFloat(proteinPerKg) || 0,
+                lipids_per_kg: parseFloat(lipidsPerKg) || 0,
+                protein_grams: macros.proteinGrams || 0,
+                lipid_grams: macros.lipidGrams || 0,
+                carb_grams: macros.carbGrams || 0,
                 meals_data: JSON.stringify(meals), // Stored as JSON string
                 date: new Date().toISOString().split('T')[0]
             };
@@ -491,8 +491,10 @@ export default function NutritionCalculatorScreen() {
             }
             await fetchPlans();
             router.back();
-        } catch (error) {
-            Alert.alert('Error', 'Hubo un error al guardar el plan en el servidor.');
+        } catch (error: any) {
+            console.error('Error saving plan in screen:', error);
+            const serverMsg = error.response?.data?.message || error.response?.data?.error || (error.response?.data?.errors ? Object.values(error.response.data.errors).flat().join('\n') : null) || error.message;
+            Alert.alert('Error', serverMsg ? `Error al guardar: ${serverMsg}` : 'Hubo un error al guardar el plan en el servidor.');
         } finally {
             setIsSaving(false);
         }
