@@ -7,7 +7,6 @@
     "icon": "./assets/images/logo-square.png",
     "scheme": "aftraining",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -19,7 +18,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/logo-square.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -43,7 +41,9 @@
       "expo-secure-store",
       "expo-font",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

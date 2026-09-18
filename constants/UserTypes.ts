@@ -34,6 +34,10 @@ export interface Client extends BaseUser {
         side: string | null;
         back: string | null;
     };
+    front_photo_url?: string;
+    side_photo_url?: string;
+    back_photo_url?: string;
+    initial_measurements?: string;
     plan?: MonthlyPlan;
 }
 

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     Alert,
     FlatList,
@@ -36,6 +37,7 @@ export default function NutritionScreen() {
     const { currentUser, clients } = useUser();
     const router = useRouter();
     const { filter } = useLocalSearchParams();
+    const insets = useSafeAreaInsets();
 
     const [refreshing, setRefreshing] = useState(false);
     const [expandedNutritionPlan, setExpandedNutritionPlan] = useState<string | number | null>(null);
@@ -103,7 +105,7 @@ export default function NutritionScreen() {
             )}
 
             {filteredPlans.length === 0 ? (
-                <ScrollView contentContainerStyle={styles.emptyState} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
+                <ScrollView contentContainerStyle={[styles.emptyState, { paddingBottom: Math.max(insets.bottom, 24) + 60 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
                     <View style={styles.emptyIconContainer}>
                         <Apple size={36} color={Colors.textMuted} />
                     </View>
@@ -120,7 +122,7 @@ export default function NutritionScreen() {
                 <FlatList
                     data={filteredPlans}
                     keyExtractor={(item) => item.id.toString()}
-                    contentContainerStyle={styles.plansList}
+                    contentContainerStyle={[styles.plansList, { paddingBottom: Math.max(insets.bottom, 24) + 80 }]}
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />}
                     renderItem={({ item }) => {
                         const isExpanded = expandedNutritionPlan === item.id;
@@ -183,6 +185,24 @@ export default function NutritionScreen() {
                                                 )}
                                             </View>
                                         ))}
+
+                                        {(item.notes || (item.description && !item.description.startsWith('Objetivo:'))) && (
+                                            <View style={{ marginTop: 12, backgroundColor: Colors.surfaceLight, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border }}>
+                                                <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary, marginBottom: 4 }}>Comentarios e Indicaciones:</Text>
+                                                <Text style={{ fontSize: 13, color: Colors.text, lineHeight: 18 }}>
+                                                    {item.notes || item.description?.split('Objetivo:')[0].trim()}
+                                                </Text>
+                                            </View>
+                                        )}
+
+                                        {item.additional_comments ? (
+                                            <View style={{ marginTop: 12, backgroundColor: Colors.surfaceLight, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border }}>
+                                                <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary, marginBottom: 4 }}>Comentarios Adicionales:</Text>
+                                                <Text style={{ fontSize: 13, color: Colors.text, lineHeight: 18 }}>
+                                                    {item.additional_comments}
+                                                </Text>
+                                            </View>
+                                        ) : null}
                                     </View>
                                 )}
                             </View>
@@ -192,7 +212,7 @@ export default function NutritionScreen() {
             )}
 
             {isCoach && (
-                <TouchableOpacity style={styles.fab} onPress={handleCreatePlan}>
+                <TouchableOpacity style={[styles.fab, { bottom: Math.max(insets.bottom, 24) + 16 }]} onPress={handleCreatePlan}>
                     <Plus size={24} color="#000" />
                 </TouchableOpacity>
             )}
@@ -247,5 +267,27 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: Colors.textMuted,
         width: '48%',
+    },
+
+    clientChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    clientChipActive: {
+        backgroundColor: Colors.primary,
+        borderColor: Colors.primary,
+    },
+    clientChipText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: Colors.textMuted,
+    },
+    clientChipTextActive: {
+        color: '#000',
+        fontWeight: '700',
     },
 });

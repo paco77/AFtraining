@@ -93,7 +93,7 @@ export default function ForgotPasswordScreen() {
                     </TouchableOpacity>
 
                     {/* Header */}
-                    <View style={styles.header}>
+                    <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                         <Image
                             source={require('../assets/images/logo.png')}
                             style={styles.logo}

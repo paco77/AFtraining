@@ -14,6 +14,7 @@ import {
     User
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ActivityIndicator,
     ScrollView,
@@ -28,6 +29,7 @@ export default function PlanDetails() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const { clients, currentUser } = useUser();
+    const insets = useSafeAreaInsets();
 
     const [plan, setPlan] = useState<MonthlyPlan | null>(null);
     const [history, setHistory] = useState<any[]>([]);
@@ -244,7 +246,7 @@ export default function PlanDetails() {
             }} />
             <StatusBar barStyle="light-content" />
 
-            <View style={styles.topHeader}>
+            <View style={[styles.topHeader, { paddingTop: Math.max(insets.top, 20) + 30 }]}>
                 <View style={styles.planSummary}>
                     <View style={styles.planIconCircle}>
                         <ClipboardList size={28} color={Colors.primary} />
@@ -277,7 +279,7 @@ export default function PlanDetails() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 24) + 40 }]}>
                 <Text style={styles.sectionTitle}>Estructura de Entrenamiento</Text>
 
                 {(plan.days || []).sort((a: any, b: any) => a.dayNumber - b.dayNumber).map((day: any) => (

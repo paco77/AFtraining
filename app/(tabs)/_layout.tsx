@@ -127,6 +127,10 @@ export default function TabLayout() {
           title: 'Biblioteca',
           href: null
         }} />
+        <Tabs.Screen name="cardio" options={{
+          title: 'Mapa & Running',
+          href: null
+        }} />
         <Tabs.Screen name="clients" options={{
           title: 'Clientes',
           href: isCoach ? '/(tabs)/clients' : null,
@@ -151,11 +155,7 @@ export default function TabLayout() {
         >
           <View style={[styles.menuContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.menuHeader, { borderBottomColor: colors.border }]}>
-              <TouchableOpacity
-                style={styles.menuHeaderMain}
-                onPress={() => navigateTo('/(tabs)/profile')}
-                activeOpacity={0.7}
-              >
+              <View style={styles.menuHeaderMain}>
                 {currentUser?.profilePhotoUrl ? (
                   <Image
                     source={{ uri: currentUser.profilePhotoUrl }}
@@ -172,8 +172,48 @@ export default function TabLayout() {
                   <Text style={[styles.menuRole, { color: colors.textMuted }]}>
                     {isCoach ? 'Entrenador' : 'Atleta'}
                   </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        backgroundColor: colors.primary + '18',
+                        borderColor: colors.primary + '40',
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 14
+                      }}
+                      onPress={() => navigateTo('/(tabs)/profile')}
+                    >
+                      <UserIcon size={14} color={colors.primary} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Ver Perfil</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        backgroundColor: colors.danger + '18',
+                        borderColor: colors.danger + '40',
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 14
+                      }}
+                      onPress={() => {
+                        setMenuVisible(false);
+                        logout();
+                      }}
+                    >
+                      <LogOut size={14} color={colors.danger} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Cerrar Sesión</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </TouchableOpacity>
+              </View>
               <TouchableOpacity
                 style={styles.menuCloseBtn}
                 onPress={() => setMenuVisible(false)}
@@ -203,18 +243,9 @@ export default function TabLayout() {
               {isCoach && (
                 <NavItem icon={BookOpen} label="Biblioteca de Ejercicios" path="/(tabs)/exercises" />
               )}
-              <NavItem icon={UserIcon} label="Mi Perfil" path="/(tabs)/profile" />
 
               <View style={{ height: 40 }} />
             </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.menuFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}
-              onPress={logout}
-            >
-              <LogOut size={20} color={colors.danger} />
-              <Text style={[styles.menuLogoutText, { color: colors.danger }]}>Cerrar Sesión</Text>
-            </TouchableOpacity>
           </View>
         </Pressable>
       </Modal>

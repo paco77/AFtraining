@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Colors, Fonts, Spacing, borderRadius } from '@/constants/theme';
 import { Footprints, Plus } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getUserStepLogs, saveUserSteps } from '@/services/api';
 import { Picker } from '@react-native-picker/picker';
 
 export default function StepsScreen() {
+    const insets = useSafeAreaInsets();
     const [steps, setSteps] = useState('');
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [history, setHistory] = useState<any[]>([]);
@@ -61,7 +63,7 @@ export default function StepsScreen() {
 
     return (
         <ScrollView ref={scrollViewRef} style={styles.container} contentContainerStyle={styles.content}>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <View style={styles.iconBg}>
                     <Footprints size={32} color={Colors.primary} />
                 </View>

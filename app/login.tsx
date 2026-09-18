@@ -96,7 +96,7 @@ export default function LoginScreen() {
                 >
 
                     {/* Header: KINETIC */}
-                    <View style={styles.header}>
+                    <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                         <Image
                             source={require('../assets/images/logo.png')}
                             style={{ width: 280, height: 100, marginBottom: -10 }}

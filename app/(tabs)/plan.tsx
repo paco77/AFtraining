@@ -8,6 +8,7 @@ import {
     generateDays,
     MonthlyPlan,
     MONTHS,
+    PlannedExercise,
     SessionLog,
     SPLIT_TYPES,
     SplitType,
@@ -18,7 +19,7 @@ import { usePlans } from '@/context/PlanContext';
 import { useUser } from '@/context/UserContext';
 import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
-import { ResizeMode, Video } from 'expo-av';
+import { SafeVideo } from '@/components/SafeVideo';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -33,6 +34,8 @@ import {
     Minus,
     Pencil,
     Plus,
+    RefreshCw,
+    Search,
     Trash2,
     User,
     Users,
@@ -155,7 +158,7 @@ const PlanCard = ({
     // Get assigned client name
     const { clients } = useUser();
     const clientName = isCoach && plan.assignedClientId && plan.assignedClientId !== currentUser?.id
-        ? clients.find(c => c.id === plan.assignedClientId)?.name?.split(' ')[0]
+        ? clients.find(c => c.id === plan.assignedClientId)?.name
         : null;
 
     const totalExercises = plan.days.reduce((sum, d) => sum + d.exercises.length, 0);
@@ -1204,14 +1207,10 @@ const ExercisePicker = ({
 
                         {detailExercise?.videoUrl && (
                             detailExercise.videoUrl.toLowerCase().includes('.mp4') ? (
-                                <Video
-                                    source={{ uri: detailExercise.videoUrl.startsWith('http') ? detailExercise.videoUrl : `${API_HOST}${detailExercise.videoUrl.startsWith('/') ? '' : '/'}${detailExercise.videoUrl}` }}
+                                <SafeVideo
+                                    sourceUri={detailExercise.videoUrl.startsWith('http') ? detailExercise.videoUrl : `${API_HOST}${detailExercise.videoUrl.startsWith('/') ? '' : '/'}${detailExercise.videoUrl}`}
                                     style={{ width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: '#000' }}
-                                    useNativeControls={true}
-                                    resizeMode={ResizeMode.CONTAIN}
-                                    isLooping
-                                    shouldPlay
-                                    isMuted={false}
+                                    contentFit="contain"
                                 />
                             ) : (
                                 <Image
@@ -1363,6 +1362,8 @@ export default function PlanScreen() {
         setShowWizard(true);
     };
 
+    const [clientSearchQuery, setClientSearchQuery] = useState('');
+
     const isCoach = currentUser?.role === 'coach';
     const isClient = currentUser?.role === 'client';
 
@@ -1370,40 +1371,61 @@ export default function PlanScreen() {
     // Client only sees plans assigned to them
     const filteredPlans = useMemo(() => {
         if (!currentUser) return [];
+        let list = [...plans];
         if (isCoach) {
             if (filterClientId) {
                 // Show specific client's plans (from Clients section)
-                return plans.filter(p => String(p.assignedClientId) === String(filterClientId)).sort((a, b) => {
-                    if (b.year !== a.year) return b.year - a.year;
-                    return MONTHS.indexOf(b.month) - MONTHS.indexOf(a.month);
+                list = list.filter(p => String(p.assignedClientId) === String(filterClientId));
+            }
+            if (clientSearchQuery.trim()) {
+                const query = clientSearchQuery.toLowerCase().trim();
+                list = list.filter(p => {
+                    const assignedClient = clients.find(c => String(c.id) === String(p.assignedClientId));
+                    const clientName = assignedClient?.name?.toLowerCase() || '';
+                    const clientUsername = assignedClient?.username?.toLowerCase() || '';
+                    const monthYear = `${p.month} ${p.year}`.toLowerCase();
+                    const splitType = p.splitType?.toLowerCase() || '';
+                    const isSelf = String(p.assignedClientId) === String(currentUser.id);
+                    const selfName = currentUser.name?.toLowerCase() || 'yo';
+
+                    return (
+                        clientName.includes(query) ||
+                        clientUsername.includes(query) ||
+                        monthYear.includes(query) ||
+                        splitType.includes(query) ||
+                        (isSelf && (selfName.includes(query) || 'yo'.includes(query)))
+                    );
                 });
             }
-            // By default, show ALL plans (coach + clients)
-            return [...plans].sort((a, b) => {
-                if (b.year !== a.year) return b.year - a.year;
-                return MONTHS.indexOf(b.month) - MONTHS.indexOf(a.month);
-            });
+        } else {
+            list = list.filter(p => String(p.assignedClientId) === String(currentUser.id));
         }
-        // If client, only show plans where assignedClientId matches current user id
-        const result = plans.filter(p => String(p.assignedClientId) === String(currentUser.id));
-        return result.sort((a, b) => {
+
+        return list.sort((a, b) => {
             if (b.year !== a.year) return b.year - a.year;
             return MONTHS.indexOf(b.month) - MONTHS.indexOf(a.month);
         });
-    }, [plans, currentUser?.id, isCoach, filterClientId]);
+    }, [plans, currentUser?.id, currentUser?.name, isCoach, filterClientId, clientSearchQuery, clients]);
 
-    // Build filter options for coaches
+    // Build filter options for coaches with full client names and search filter
     const clientFilterOptions = useMemo(() => {
         if (!isCoach || !currentUser) return [];
         const options: { id: string | null; label: string }[] = [
             { id: null, label: 'Todos' },
-            { id: currentUser.id, label: 'Yo' },
+            { id: currentUser.id, label: 'Yo (Mis Planes)' },
         ];
+        const query = clientSearchQuery.toLowerCase().trim();
         clients.forEach(c => {
-            options.push({ id: c.id, label: c.name?.split(' ')[0] || 'Cliente' });
+            if (
+                !query ||
+                c.name.toLowerCase().includes(query) ||
+                (c.username && c.username.toLowerCase().includes(query))
+            ) {
+                options.push({ id: c.id, label: c.name || 'Cliente' });
+            }
         });
         return options;
-    }, [isCoach, currentUser, clients]);
+    }, [isCoach, currentUser, clients, clientSearchQuery]);
 
     const createPlan = async () => {
         // Calculate target volumes automatically
@@ -1961,7 +1983,7 @@ export default function PlanScreen() {
                                                         <Text style={styles.selExName} numberOfLines={1}>
                                                             {pe.exercise.name}
                                                         </Text>
-                                                        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                                                        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
                                                             <TouchableOpacity
                                                                 onPress={() => {
                                                                     Alert.alert(
@@ -1984,15 +2006,16 @@ export default function PlanScreen() {
                                                                         ]
                                                                     );
                                                                 }}
-                                                                style={styles.selExRemove}
+                                                                style={styles.changeExBtn}
                                                             >
-                                                                <Text style={{ fontSize: 10, color: Colors.primary, fontWeight: 'bold' }}>Cambiar</Text>
+                                                                <RefreshCw size={11} color={Colors.primary} style={{ marginRight: 4 }} />
+                                                                <Text style={styles.changeExBtnText}>Cambiar</Text>
                                                             </TouchableOpacity>
                                                             <TouchableOpacity
                                                                 onPress={() => toggleExercise(idx, pe.exercise)}
-                                                                style={styles.selExRemove}
+                                                                style={styles.removeExBtn}
                                                             >
-                                                                <X size={10} color={Colors.textMuted} />
+                                                                <Trash2 size={13} color={Colors.danger} />
                                                             </TouchableOpacity>
                                                         </View>
                                                     </View>
@@ -2157,49 +2180,63 @@ export default function PlanScreen() {
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
         >
 
-            {/* Client Filter Chips for Coach */}
-            {isCoach && clients.length > 0 && (
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.clientFilterRow}
-                    contentContainerStyle={styles.clientFilterContent}
-                >
-                    {clientFilterOptions.map(opt => {
-                        const isActive = filterClientId === opt.id;
-                        return (
-                            <TouchableOpacity
-                                key={opt.id ?? 'all'}
-                                style={[styles.clientChip, isActive && styles.clientChipActive]}
-                                onPress={() => setFilterClientId(opt.id)}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.clientChipText, isActive && styles.clientChipTextActive]}>
-                                    {opt.label}
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-            )}
-
-            {/* Filter Banner */}
-            {isCoach && filterClientId && !clientFilterOptions.some(o => o.id === filterClientId) && (
-                <View style={styles.filterBanner}>
-                    <View style={styles.filterBannerTextWrap}>
-                        <User size={14} color={Colors.primary} />
-                        <Text style={styles.filterBannerText}>
-                            Mostrando planes de: <Text style={styles.filterName}>
-                                {clients.find(c => c.id === filterClientId)?.name || 'Cliente'}
-                            </Text>
-                        </Text>
+            {/* Client Search & Filter Chips for Coach */}
+            {isCoach && (
+                <View style={{ marginBottom: 4, marginTop: 8 }}>
+                    <View style={{ paddingHorizontal: Spacing.md, marginBottom: 10 }}>
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: Colors.surface,
+                            borderRadius: 14,
+                            paddingHorizontal: 14,
+                            height: 44,
+                            borderWidth: 1,
+                            borderColor: Colors.border
+                        }}>
+                            <Search size={18} color={Colors.textMuted} />
+                            <TextInput
+                                style={{ flex: 1, marginLeft: 10, color: Colors.text, fontSize: 14 }}
+                                placeholder="Buscar cliente por nombre..."
+                                placeholderTextColor={Colors.textMuted}
+                                value={clientSearchQuery}
+                                onChangeText={(text) => {
+                                    setClientSearchQuery(text);
+                                    if (filterClientId) setFilterClientId(null);
+                                }}
+                            />
+                            {clientSearchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setClientSearchQuery('')}>
+                                    <X size={16} color={Colors.textMuted} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </View>
-                    <TouchableOpacity
-                        style={styles.clearFilterBtn}
-                        onPress={() => setFilterClientId(null)}
-                    >
-                        <X size={14} color={Colors.textMuted} />
-                    </TouchableOpacity>
+
+                    {clients.length > 0 && (
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.clientFilterRow}
+                            contentContainerStyle={styles.clientFilterContent}
+                        >
+                            {clientFilterOptions.map(opt => {
+                                const isActive = filterClientId === opt.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={opt.id ?? 'all'}
+                                        style={[styles.clientChip, isActive && styles.clientChipActive]}
+                                        onPress={() => setFilterClientId(opt.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text style={[styles.clientChipText, isActive && styles.clientChipTextActive]}>
+                                            {opt.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    )}
                 </View>
             )}
 
@@ -2372,6 +2409,39 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: Colors.background,
+    },
+    clientFilterRow: {
+        maxHeight: 46,
+        marginBottom: 6,
+    },
+    clientFilterContent: {
+        paddingHorizontal: Spacing.md,
+        gap: 8,
+        alignItems: 'center',
+    },
+    clientChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        minWidth: 70,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    clientChipActive: {
+        backgroundColor: Colors.primary + '20',
+        borderColor: Colors.primary,
+    },
+    clientChipText: {
+        color: Colors.textMuted,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    clientChipTextActive: {
+        color: Colors.primary,
+        fontWeight: '800',
     },
     header: {
         paddingHorizontal: Spacing.md,
@@ -2940,11 +3010,28 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '600',
     },
-    selExRemove: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: Colors.cardBg,
+    changeExBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.primary + '18',
+        borderWidth: 1,
+        borderColor: Colors.primary + '35',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+    },
+    changeExBtnText: {
+        fontSize: 11,
+        color: Colors.primary,
+        fontWeight: '600',
+    },
+    removeExBtn: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: Colors.danger + '18',
+        borderWidth: 1,
+        borderColor: Colors.danger + '35',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -3634,41 +3721,6 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
         gap: 8,
         marginTop: 10,
-    },
-    clientFilterRow: {
-        maxHeight: 44,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
-        backgroundColor: Colors.surface,
-    },
-    clientFilterContent: {
-        paddingHorizontal: Spacing.md,
-        gap: 8,
-        alignItems: 'center',
-        paddingVertical: 6,
-    },
-    clientChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: borderRadius.full,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        backgroundColor: Colors.cardBg,
-    },
-    clientChipActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
-    },
-    clientChipText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: Colors.textMuted,
-    },
-    clientChipTextActive: {
-        color: '#000',
     },
     // New fields
     repsInputWrapper: {

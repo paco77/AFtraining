@@ -18,6 +18,7 @@ import {
     LogOut
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ActivityIndicator,
     Alert,
@@ -39,6 +40,7 @@ export default function ProfileScreen() {
     const router = useRouter();
     const { currentUser, clients, updateProfilePhoto, updateProfile, logout } = useUser();
     const { plans, fetchPlans } = usePlans();
+    const insets = useSafeAreaInsets();
     const [isUploading, setIsUploading] = useState(false);
     const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
@@ -177,11 +179,17 @@ export default function ProfileScreen() {
     return (
         <ScrollView
             style={styles.container}
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[
+                styles.content,
+                {
+                    paddingTop: Math.max(insets.top, 16) + 12,
+                    paddingBottom: Math.max(insets.bottom, 24) + 40
+                }
+            ]}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         >
             {/* Header / Avatar */}
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <TouchableOpacity
                     style={styles.avatarContainer}
                     onPress={handlePickImage}
@@ -373,11 +381,27 @@ export default function ProfileScreen() {
                         <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
                     ) : progressHistory.length > 0 ? (
                         <View style={{ gap: 12 }}>
-                            {progressHistory.slice(0, 1).map((prog, idx) => (
-                                <View key={prog.id || idx} style={styles.historyCard}>
+                            {progressHistory.slice(0, 1).map((prog, idx) => {
+                                const thumb = prog.front_photo_url || prog.front_photo_path || prog.front_photo || prog.side_photo_url || prog.side_photo_path || prog.side_photo;
+                                return (
+                                <TouchableOpacity 
+                                    key={prog.id || idx} 
+                                    style={styles.historyCard}
+                                    activeOpacity={0.7}
+                                    onPress={() => router.push({
+                                        pathname: '/client/progress/detail',
+                                        params: { item: JSON.stringify(prog), clientId: currentUser.id }
+                                    })}
+                                >
                                     <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary, marginRight: 15, shadowColor: Colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 5 }} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.historyDate}>{new Date(prog.created_at || prog.recorded_at || Date.now()).toLocaleDateString()}</Text>
+                                        <Text style={styles.historyDate}>{
+                                            (() => {
+                                                const dStr = typeof (prog.created_at || prog.recorded_at) === 'string' ? (prog.created_at || prog.recorded_at).replace(' ', 'T') : null;
+                                                const d = dStr ? new Date(dStr) : new Date();
+                                                return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
+                                            })()
+                                        }</Text>
                                         <Text style={styles.historyWeight}>Peso: {prog.weight ? `${prog.weight} kg` : '--'}</Text>
                                         
                                         {prog.measurements && Object.keys(prog.measurements).length > 0 && (
@@ -392,8 +416,12 @@ export default function ProfileScreen() {
 
                                         {prog.comments && <Text style={styles.historyComment}>"{prog.comments}"</Text>}
                                     </View>
-                                </View>
-                            ))}
+                                    {thumb && (
+                                        <Image source={{ uri: thumb }} style={{ width: 60, height: 80, borderRadius: 8, marginLeft: 12, resizeMode: 'cover' }} />
+                                    )}
+                                </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     ) : (
                         <View style={{ backgroundColor: Colors.surface, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.border, padding: 24, alignItems: 'center', gap: 8 }}>

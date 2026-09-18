@@ -2,6 +2,7 @@ import { PlanProvider } from '@/context/PlanContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { UserProvider } from '@/context/UserContext';
 import { NutritionProvider } from '@/context/NutritionContext';
+import { OutdoorActivityProvider } from '@/context/OutdoorActivityContext';
 import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,6 +16,7 @@ import { Lexend_600SemiBold, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { Manrope_400Regular, Manrope_500Medium, Manrope_700Bold } from '@expo-google-fonts/manrope';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { View } from 'react-native';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -45,16 +47,20 @@ export default function RootLayout() {
         <UserProvider>
           <PlanProvider>
             <NutritionProvider>
-              <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <Stack initialRouteName="login">
-                  <Stack.Screen name="login" options={{ headerShown: false }} />
-                  <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                </Stack>
-                <StatusBar style="light" />
-                <Toaster />
-              </NavThemeProvider>
+              <OutdoorActivityProvider>
+                <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                  <View style={{ flex: 1, paddingBottom: 24, backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }}>
+                    <Stack initialRouteName="login">
+                      <Stack.Screen name="login" options={{ headerShown: false }} />
+                      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                    </Stack>
+                  </View>
+                  <StatusBar style="light" />
+                  <Toaster />
+                </NavThemeProvider>
+              </OutdoorActivityProvider>
             </NutritionProvider>
           </PlanProvider>
         </UserProvider>

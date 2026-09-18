@@ -1,7 +1,7 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { AppUser, Client } from '../constants/UserTypes';
-import api from '../services/api';
+import api, { getBaseUrl } from '../services/api';
 import Storage from '../services/storage';
 
 
@@ -19,6 +19,13 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+const formatGlobalUrl = (path: string | null) => {
+    if (!path) return null;
+    if (path.startsWith('http')) return path;
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    return `https://aftraining-storage.sfo2.digitaloceanspaces.com/${cleanPath}`;
+};
+
 const mapApiUserToFrontend = (apiUser: any): AppUser => {
     if (!apiUser) return apiUser;
     const base = {
@@ -28,7 +35,7 @@ const mapApiUserToFrontend = (apiUser: any): AppUser => {
         role: apiUser.role as any,
         name: apiUser.name,
         trainingInfo: apiUser.training_info,
-        profilePhotoUrl: apiUser.profile_photo_url,
+        profilePhotoUrl: formatGlobalUrl(apiUser.profile_photo_url || apiUser.profile_photo_path),
     };
 
     if (apiUser.role === 'client') {
@@ -42,6 +49,10 @@ const mapApiUserToFrontend = (apiUser: any): AppUser => {
             height: apiUser.height,
             trainingTime: apiUser.training_time,
             objectives: apiUser.objectives,
+            front_photo_url: formatGlobalUrl(apiUser.front_photo_url || apiUser.front_photo_path || apiUser.front_photo),
+            side_photo_url: formatGlobalUrl(apiUser.side_photo_url || apiUser.side_photo_path || apiUser.side_photo),
+            back_photo_url: formatGlobalUrl(apiUser.back_photo_url || apiUser.back_photo_path || apiUser.back_photo),
+            initial_measurements: apiUser.initial_measurements || apiUser.measurements,
         };
     }
 
@@ -73,7 +84,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
     const fetchProfile = useCallback(async () => {
         try {
             const response = await api.get('me');
-            const rawUser = response.data.data;
+            const rawUser = response.data.data || response.data;
+            console.log('DEBUG ME RAW DATA:', JSON.stringify(rawUser, null, 2));
             const user = mapApiUserToFrontend(rawUser);
 
             setCurrentUser(user);
@@ -82,6 +94,9 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             if (user.role === 'coach') {
                 const clientsRes = await api.get('clients');
                 const rawClients = clientsRes.data.data || [];
+                if (rawClients.length > 0) {
+                    console.log('DEBUG FIRST CLIENT RAW DATA:', JSON.stringify(rawClients[0], null, 2));
+                }
                 const mappedClients = rawClients.map(mapApiUserToFrontend);
                 setClients(mappedClients);
             }
@@ -172,9 +187,10 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             const formData = new FormData();
 
             // Preparar el archivo para FormData
-            const filename = uri.split('/').pop() || 'photo.jpg';
+            let filename = uri.split('/').pop() || 'photo.jpg';
             const match = /\.(\w+)$/.exec(filename);
-            const type = match ? `image/${match[1]}` : `image`;
+            let type = match ? `image/${match[1]}` : `image/jpeg`;
+            if (!match) filename = `${filename}.jpg`;
 
             // @ts-ignore
             formData.append('profile_photo', {
@@ -196,8 +212,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             setCurrentUser(updatedUser);
             await Storage.setItem('user_data', JSON.stringify(updatedUser));
             return updatedUser;
-        } catch (error) {
-            console.error('Error updating profile photo:', error);
+        } catch (error: any) {
+            console.error('Error updating profile photo:', error.response?.data || error.message);
             throw error;
         }
     };

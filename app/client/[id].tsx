@@ -22,6 +22,7 @@ import {
     PlayCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ActivityIndicator,
     Alert,
@@ -38,6 +39,7 @@ export default function ClientDetails() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const { clients, refreshProfile } = useUser();
+    const insets = useSafeAreaInsets();
     const { plans, fetchHistory } = usePlans();
 
     const [history, setHistory] = useState<any[]>([]);
@@ -63,53 +65,63 @@ export default function ClientDetails() {
     const [loadingProgress, setLoadingProgress] = useState(true);
 
     useEffect(() => {
+        let isMounted = true;
+
+        const loadHistory = async () => {
+            if (isMounted) setLoadingHistory(true);
+            const data = await fetchHistory(client?.id);
+            if (isMounted) {
+                setHistory(data || []);
+                setLoadingHistory(false);
+            }
+        };
+
+        const loadProgress = async () => {
+            if (isMounted) setLoadingProgress(true);
+            try {
+                const response = await api.get(`clients/${client?.id}/progress`);
+                let data = Array.isArray(response.data) ? response.data : response.data.data || [];
+
+                if (client && (client.weight || client.height)) {
+                    data.push({
+                        id: 'initial_bio',
+                        weight: client.weight,
+                        created_at: client.created_at || new Date().toISOString(),
+                        comments: 'Biometría Inicial',
+                        measurements: {
+                            Altura: client.height ? `${client.height} cm` : undefined,
+                            Edad: client.age ? `${client.age} años` : undefined
+                        }
+                    });
+                }
+
+                data.sort((a: any, b: any) => {
+                    const dateA = new Date((a.recorded_at || a.created_at || '').replace(' ', 'T')).getTime();
+                    const dateB = new Date((b.recorded_at || b.created_at || '').replace(' ', 'T')).getTime();
+                    return dateB - dateA;
+                });
+
+                if (isMounted) {
+                    setProgressHistory(data);
+                }
+            } catch (error) {
+                console.error("Error loading progress", error);
+            } finally {
+                if (isMounted) {
+                    setLoadingProgress(false);
+                }
+            }
+        };
+
         if (client?.id) {
             loadHistory();
             loadProgress();
         }
+
+        return () => {
+            isMounted = false;
+        };
     }, [client?.id]);
-
-    const loadHistory = async () => {
-        setLoadingHistory(true);
-        const data = await fetchHistory(client?.id);
-        setHistory(data || []);
-        setLoadingHistory(false);
-    };
-
-    const loadProgress = async () => {
-        setLoadingProgress(true);
-        try {
-            const response = await api.get(`clients/${client?.id}/progress`);
-            let data = Array.isArray(response.data) ? response.data : response.data.data || [];
-
-            if (client && (client.weight || client.height)) {
-                data.push({
-                    id: 'initial_bio',
-                    weight: client.weight,
-                    created_at: client.created_at || new Date().toISOString(),
-                    comments: 'Biometría Inicial',
-                    measurements: {
-                        Altura: client.height ? `${client.height} cm` : undefined,
-                        Edad: client.age ? `${client.age} años` : undefined
-                    }
-                });
-            }
-
-            data.sort((a: any, b: any) => {
-                const dateA = new Date(a.created_at || a.recorded_at || 0).getTime();
-                const dateB = new Date(b.created_at || b.recorded_at || 0).getTime();
-                return dateB - dateA;
-            });
-            setProgressHistory(data);
-            if (refreshProfile) {
-                await refreshProfile();
-            }
-        } catch (error) {
-            console.error('Error fetching progress:', error);
-        } finally {
-            setLoadingProgress(false);
-        }
-    };
 
     const handleDeleteNutritionPlan = (planId: string | number) => {
         Alert.alert(
@@ -149,9 +161,13 @@ export default function ClientDetails() {
             <StatusBar barStyle="light-content" />
 
             {/* Header / Profile Summary */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.headerBack} onPress={() => router.back()}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 20 }]}>
+                <TouchableOpacity style={[styles.headerBack, { top: Math.max(insets.top, 20) + 12 }]} onPress={() => router.back()}>
                     <ArrowLeft size={24} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.headerEdit, { top: Math.max(insets.top, 20) + 12 }]} onPress={() => router.push(`/client/edit/${client.id}`)}>
+                    <Edit size={22} color="#fff" />
                 </TouchableOpacity>
 
                 <View style={styles.profileBox}>
@@ -177,7 +193,11 @@ export default function ClientDetails() {
                 </View>
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 40 }}
+                showsVerticalScrollIndicator={false}
+            >
                 {/* Physical Stats Grid */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Biometría Inicial</Text>
@@ -258,11 +278,27 @@ export default function ClientDetails() {
                         <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
                     ) : progressHistory.length > 0 ? (
                         <View style={styles.historyList}>
-                            {progressHistory.slice(0, 1).map((prog, idx) => (
-                                <View key={prog.id || idx} style={styles.historyCard}>
+                            {progressHistory.slice(0, 1).map((prog, idx) => {
+                                const thumb = prog.front_photo_url || prog.front_photo_path || prog.front_photo || prog.side_photo_url || prog.side_photo_path || prog.side_photo;
+                                return (
+                                <TouchableOpacity 
+                                    key={prog.id || idx} 
+                                    style={styles.historyCard}
+                                    activeOpacity={0.7}
+                                    onPress={() => router.push({
+                                        pathname: '/client/progress/detail',
+                                        params: { item: JSON.stringify(prog), clientId: client?.id }
+                                    })}
+                                >
                                     <View style={styles.historyDot} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.historyDate}>{new Date(prog.created_at || prog.recorded_at || Date.now()).toLocaleDateString()}</Text>
+                                        <Text style={styles.historyDate}>{
+                                            (() => {
+                                                const dStr = typeof (prog.created_at || prog.recorded_at) === 'string' ? (prog.created_at || prog.recorded_at).replace(' ', 'T') : null;
+                                                const d = dStr ? new Date(dStr) : new Date();
+                                                return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
+                                            })()
+                                        }</Text>
                                         <Text style={styles.historyWeight}>Peso: {prog.weight ? `${prog.weight} kg` : '--'}</Text>
 
                                         {prog.measurements && Object.keys(prog.measurements).length > 0 && (
@@ -277,8 +313,12 @@ export default function ClientDetails() {
 
                                         {prog.comments && <Text style={styles.historyComment}>"{prog.comments}"</Text>}
                                     </View>
-                                </View>
-                            ))}
+                                    {thumb && (
+                                        <Image source={{ uri: thumb }} style={{ width: 60, height: 80, borderRadius: 8, marginLeft: 12, resizeMode: 'cover' }} />
+                                    )}
+                                </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     ) : (
                         <View style={styles.cpEmpty}>
@@ -885,6 +925,22 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         color: Colors.primary,
+    },
+    headerBack: {
+        position: 'absolute',
+        left: Spacing.md,
+        zIndex: 10,
+        padding: 8,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 20,
+    },
+    headerEdit: {
+        position: 'absolute',
+        right: Spacing.md,
+        zIndex: 10,
+        padding: 8,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 20,
     },
     cpDayChips: {
         flexDirection: 'row',

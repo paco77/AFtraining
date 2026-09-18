@@ -95,7 +95,7 @@ export const getFatSecretFoodDetails = async (id: string) => {
 };
 
 export const parseQuantity = (str: string | number): number => {
-    if (typeof str === 'number') return isNaN(str) ? 0 : str;
+    if (typeof str === 'number') return isNaN(str) || !isFinite(str) ? 0 : str;
     if (!str || typeof str !== 'string') return 0;
     const cleaned = str.trim().replace(',', '.');
     if (!cleaned) return 0;
@@ -124,7 +124,12 @@ export const parseQuantity = (str: string | number): number => {
     }
 
     const parsed = parseFloat(cleaned);
-    return isNaN(parsed) ? 0 : parsed;
+    return isNaN(parsed) || !isFinite(parsed) ? 0 : parsed;
+};
+
+const safeNum = (v: any, fallback = 0): number => {
+    const n = Number(v);
+    return isNaN(n) || !isFinite(n) ? fallback : n;
 };
 
 export const saveNutritionPlan = async (rawData: any) => {
@@ -136,32 +141,36 @@ export const saveNutritionPlan = async (rawData: any) => {
             console.error('Failed to parse meals_data', e);
         }
 
-        const formattedMeals = (parsedMeals || []).map((meal: any) => ({
-            name: meal.name || 'Comida',
-            foods: (meal.foods || []).map((food: any) => {
-                const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
-                const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
-                const parsedServingSize = parseQuantity(rawAmount) || 1;
-                const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : Number(food.amountMultiplier);
-                const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
+        const formattedMeals = (parsedMeals || []).map((meal: any) => {
+            if (!meal) return { name: 'Comida', foods: [] };
+            return {
+                name: meal.name || 'Comida',
+                foods: ((meal && meal.foods) || []).map((food: any) => {
+                    if (!food) return { fatsecret_food_id: null, name: 'Alimento', serving_size: '1', serving_unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 };
+                    const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
+                    const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
+                    const parsedServingSize = parseQuantity(rawAmount) || 1;
+                    const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : safeNum(food.amountMultiplier, 1);
+                    const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
 
-                return {
-                    fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
-                    name: food.name || 'Alimento',
-                    serving_size: String(parsedServingSize),
-                    serving_unit: safeUnit,
-                    calories: (Number(food.calories) || 0) * multiplier,
-                    protein: (Number(food.protein) || 0) * multiplier,
-                    carbs: (Number(food.carbs) || 0) * multiplier,
-                    fat: (Number(food.fat) || 0) * multiplier,
-                };
-            })
-        }));
+                    return {
+                        fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
+                        name: food.name || 'Alimento',
+                        serving_size: String(parsedServingSize),
+                        serving_unit: safeUnit,
+                        calories: safeNum(food.calories) * multiplier,
+                        protein: safeNum(food.protein) * multiplier,
+                        carbs: safeNum(food.carbs) * multiplier,
+                        fat: safeNum(food.fat) * multiplier,
+                    };
+                })
+            };
+        });
 
-        const totalCals = Number(rawData.target_calories) || Number(rawData.total_calories) || 0;
-        const proteinGrams = Number(rawData.protein_grams) || Number(rawData.total_protein) || 0;
-        const lipidGrams = Number(rawData.lipid_grams) || Number(rawData.total_fat) || 0;
-        const carbGrams = Number(rawData.carb_grams) || Number(rawData.total_carbs) || 0;
+        const totalCals = safeNum(rawData.target_calories) || safeNum(rawData.total_calories);
+        const proteinGrams = safeNum(rawData.protein_grams) || safeNum(rawData.total_protein);
+        const lipidGrams = safeNum(rawData.lipid_grams) || safeNum(rawData.total_fat);
+        const carbGrams = safeNum(rawData.carb_grams) || safeNum(rawData.total_carbs);
 
         const pPct = totalCals > 0 ? (proteinGrams * 4 / totalCals * 100).toFixed(0) : '0';
         const fPct = totalCals > 0 ? (lipidGrams * 9 / totalCals * 100).toFixed(0) : '0';
@@ -171,20 +180,22 @@ export const saveNutritionPlan = async (rawData: any) => {
             ? (isNaN(Number(rawData.client_id)) ? rawData.client_id : Number(rawData.client_id))
             : null;
 
+        const userNotes = rawData.notes !== undefined ? rawData.notes : '';
         const planData = {
             client_id: clientIdVal,
             name: rawData.name || `Plan Nutricional - ${rawData.date || new Date().toISOString().split('T')[0]}`,
-            description: (rawData.description ? `${rawData.description}\n\n` : '') + `Objetivo: ${rawData.objective || 'Mantenimiento'} | Fórmula: ${rawData.formula || 'mifflin'} | Macros (%): P${pPct} F${fPct} C${cPct} | Calorías Objetivo: ${totalCals}kcal`,
-            tdee: Number(rawData.tdee) || 0,
+            description: (userNotes ? `${userNotes}\n\n` : '') + `Objetivo: ${rawData.objective || 'Mantenimiento'} | Fórmula: ${rawData.formula || 'mifflin'} | Macros (%): P${pPct} F${fPct} C${cPct} | Calorías Objetivo: ${totalCals}kcal`,
+            notes: userNotes,
+            tdee: safeNum(rawData.tdee),
             target_calories: totalCals,
             gender: rawData.gender || 'Hombre',
-            weight: Number(rawData.weight) || 0,
-            height: Number(rawData.height) || 0,
-            age: Number(rawData.age) || 0,
-            activity_level: Number(rawData.activity_level) || 1.2,
+            weight: safeNum(rawData.weight),
+            height: safeNum(rawData.height),
+            age: safeNum(rawData.age),
+            activity_level: safeNum(rawData.activity_level, 1.2),
             formula: rawData.formula || 'mifflin',
             objective: rawData.objective || 'Mantenimiento',
-            caloric_adjustment: Number(rawData.caloric_adjustment) || 0,
+            caloric_adjustment: safeNum(rawData.caloric_adjustment),
             total_calories: totalCals,
             total_protein: proteinGrams,
             total_carbs: carbGrams,
@@ -210,32 +221,36 @@ export const updateNutritionPlan = async (id: string | number, rawData: any) => 
             console.error('Failed to parse meals_data', e);
         }
 
-        const formattedMeals = (parsedMeals || []).map((meal: any) => ({
-            name: meal.name || 'Comida',
-            foods: (meal.foods || []).map((food: any) => {
-                const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
-                const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
-                const parsedServingSize = parseQuantity(rawAmount) || 1;
-                const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : Number(food.amountMultiplier);
-                const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
+        const formattedMeals = (parsedMeals || []).map((meal: any) => {
+            if (!meal) return { name: 'Comida', foods: [] };
+            return {
+                name: meal.name || 'Comida',
+                foods: ((meal && meal.foods) || []).map((food: any) => {
+                    if (!food) return { fatsecret_food_id: null, name: 'Alimento', serving_size: '1', serving_unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 };
+                    const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
+                    const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
+                    const parsedServingSize = parseQuantity(rawAmount) || 1;
+                    const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : safeNum(food.amountMultiplier, 1);
+                    const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
 
-                return {
-                    fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
-                    name: food.name || 'Alimento',
-                    serving_size: String(parsedServingSize),
-                    serving_unit: safeUnit,
-                    calories: (Number(food.calories) || 0) * multiplier,
-                    protein: (Number(food.protein) || 0) * multiplier,
-                    carbs: (Number(food.carbs) || 0) * multiplier,
-                    fat: (Number(food.fat) || 0) * multiplier,
-                };
-            })
-        }));
+                    return {
+                        fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
+                        name: food.name || 'Alimento',
+                        serving_size: String(parsedServingSize),
+                        serving_unit: safeUnit,
+                        calories: safeNum(food.calories) * multiplier,
+                        protein: safeNum(food.protein) * multiplier,
+                        carbs: safeNum(food.carbs) * multiplier,
+                        fat: safeNum(food.fat) * multiplier,
+                    };
+                })
+            };
+        });
 
-        const totalCals = Number(rawData.target_calories) || Number(rawData.total_calories) || 0;
-        const proteinGrams = Number(rawData.protein_grams) || Number(rawData.total_protein) || 0;
-        const lipidGrams = Number(rawData.lipid_grams) || Number(rawData.total_fat) || 0;
-        const carbGrams = Number(rawData.carb_grams) || Number(rawData.total_carbs) || 0;
+        const totalCals = safeNum(rawData.target_calories) || safeNum(rawData.total_calories);
+        const proteinGrams = safeNum(rawData.protein_grams) || safeNum(rawData.total_protein);
+        const lipidGrams = safeNum(rawData.lipid_grams) || safeNum(rawData.total_fat);
+        const carbGrams = safeNum(rawData.carb_grams) || safeNum(rawData.total_carbs);
 
         const pPct = totalCals > 0 ? (proteinGrams * 4 / totalCals * 100).toFixed(0) : '0';
         const fPct = totalCals > 0 ? (lipidGrams * 9 / totalCals * 100).toFixed(0) : '0';
@@ -245,20 +260,22 @@ export const updateNutritionPlan = async (id: string | number, rawData: any) => 
             ? (isNaN(Number(rawData.client_id)) ? rawData.client_id : Number(rawData.client_id))
             : null;
 
+        const userNotesUpdate = rawData.notes !== undefined ? rawData.notes : '';
         const planData = {
             client_id: clientIdVal,
             name: rawData.name || `Plan Nutricional - ${rawData.date || new Date().toISOString().split('T')[0]}`,
-            description: rawData.objective ? ((rawData.description ? `${rawData.description}\n\n` : '') + `Objetivo: ${rawData.objective} | Fórmula: ${rawData.formula} | Macros (%): P${pPct} F${fPct} C${cPct} | Calorías Objetivo: ${totalCals}kcal`) : rawData.description,
-            tdee: Number(rawData.tdee) || 0,
+            description: (userNotesUpdate ? `${userNotesUpdate}\n\n` : '') + `Objetivo: ${rawData.objective || 'Mantenimiento'} | Fórmula: ${rawData.formula || 'mifflin'} | Macros (%): P${pPct} F${fPct} C${cPct} | Calorías Objetivo: ${totalCals}kcal`,
+            notes: userNotesUpdate,
+            tdee: safeNum(rawData.tdee),
             target_calories: totalCals,
             gender: rawData.gender || 'Hombre',
-            weight: Number(rawData.weight) || 0,
-            height: Number(rawData.height) || 0,
-            age: Number(rawData.age) || 0,
-            activity_level: Number(rawData.activity_level) || 1.2,
+            weight: safeNum(rawData.weight),
+            height: safeNum(rawData.height),
+            age: safeNum(rawData.age),
+            activity_level: safeNum(rawData.activity_level, 1.2),
             formula: rawData.formula || 'mifflin',
             objective: rawData.objective || 'Mantenimiento',
-            caloric_adjustment: Number(rawData.caloric_adjustment) || 0,
+            caloric_adjustment: safeNum(rawData.caloric_adjustment),
             total_calories: totalCals,
             total_protein: proteinGrams,
             total_carbs: carbGrams,

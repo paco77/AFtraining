@@ -1,5 +1,7 @@
 import { Colors, Fonts, borderRadius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CalendarDays, ChevronRight, Dumbbell, Info, Plus, User, Users, Search, X } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -13,14 +15,16 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
-    Keyboard
+    Keyboard,
+    Text
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function ClientsScreen() {
     const router = useRouter();
-    const { clients } = useUser();
+    const { clients, fetchClients, isCoach } = useUser();
+    const insets = useSafeAreaInsets();
     const [searchQuery, setSearchQuery] = useState('');
     const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -114,7 +118,7 @@ export default function ClientsScreen() {
 
     return (
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <View />
                 <TouchableOpacity
                     style={styles.addBtn}

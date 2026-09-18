@@ -42,36 +42,52 @@ interface Meal {
     foods: FoodItem[];
 }
 
-const parseQuantity = (str: string): number => {
-    if (!str || typeof str !== 'string') return 0;
-    const cleaned = str.trim().replace(',', '.');
+const safeFloat = (val: any, fallback = 0): number => {
+    if (val === undefined || val === null) return fallback;
+    if (typeof val === 'number') return isNaN(val) || !isFinite(val) ? fallback : val;
+    const str = String(val).trim().replace(',', '.');
+    if (!str) return fallback;
+    const parsed = parseFloat(str);
+    return isNaN(parsed) || !isFinite(parsed) ? fallback : parsed;
+};
+
+const safeInt = (val: any, fallback = 0): number => {
+    if (val === undefined || val === null) return fallback;
+    if (typeof val === 'number') return isNaN(val) || !isFinite(val) ? fallback : Math.round(val);
+    const str = String(val).trim().replace(',', '.');
+    if (!str) return fallback;
+    const parsed = parseInt(str, 10);
+    return isNaN(parsed) ? fallback : parsed;
+};
+
+const parseQuantity = (str: any): number => {
+    if (str === undefined || str === null) return 0;
+    if (typeof str === 'number') return isNaN(str) || !isFinite(str) ? 0 : str;
+    const cleaned = String(str).trim().replace(',', '.');
     if (!cleaned) return 0;
 
     // Check for mixed fraction like "1 1/2", "2 1/3", "1-1/2"
     if (cleaned.includes(' ') || cleaned.includes('-')) {
         const parts = cleaned.split(/[\s-]+/).filter(Boolean);
         if (parts.length === 2) {
-            const whole = parseFloat(parts[0]);
+            const whole = safeFloat(parts[0]);
             const frac = parseQuantity(parts[1]);
-            if (!isNaN(whole) && !isNaN(frac)) {
-                return whole + frac;
-            }
+            return whole + frac;
         }
     }
 
     // Check for simple fraction like "1/2", "1/3", "1/4", "3/4"
     if (cleaned.includes('/')) {
         const [numStr, denStr] = cleaned.split('/');
-        const num = parseFloat(numStr);
-        const den = parseFloat(denStr);
-        if (!isNaN(num) && !isNaN(den) && den !== 0) {
+        const num = safeFloat(numStr);
+        const den = safeFloat(denStr);
+        if (den !== 0) {
             return num / den;
         }
         return 0;
     }
 
-    const parsed = parseFloat(cleaned);
-    return isNaN(parsed) ? 0 : parsed;
+    return safeFloat(cleaned);
 };
 
 export default function NutritionCalculatorScreen() {
@@ -97,6 +113,10 @@ export default function NutritionCalculatorScreen() {
     // Macro adjustment settings
     const [proteinPerKg, setProteinPerKg] = useState('2.2');
     const [lipidsPerKg, setLipidsPerKg] = useState('0.8');
+
+    // Notes / Comments input
+    const [notes, setNotes] = useState('');
+    const [additionalComments, setAdditionalComments] = useState('');
 
     // Computed values
     const [tdee, setTdee] = useState(0);
@@ -129,8 +149,14 @@ export default function NutritionCalculatorScreen() {
     const [manualFood, setManualFood] = useState({
         name: '',
         quantity: '',
-        unit: 'g' // 'g', 'pz', 'porcion'
-    }); useEffect(() => {
+        unit: 'g',
+        calories: '',
+        protein: '',
+        carbs: '',
+        fat: ''
+    });
+
+    useEffect(() => {
         if (client) {
             setWeight(client.weight?.toString() || '');
             setHeight(client.height?.toString() || '');
@@ -140,8 +166,8 @@ export default function NutritionCalculatorScreen() {
         if (planId) {
             const existingPlan = plans.find(p => String(p.id) === String(planId));
             if (existingPlan) {
-                if (existingPlan.tdee) setTdee(existingPlan.tdee);
-                if (existingPlan.target_calories) setTargetCalories(existingPlan.target_calories);
+                if (existingPlan.tdee) setTdee(safeFloat(existingPlan.tdee));
+                if (existingPlan.target_calories) setTargetCalories(safeFloat(existingPlan.target_calories));
 
                 // Populate calculator fields
                 if (existingPlan.gender) setGender(existingPlan.gender);
@@ -152,6 +178,17 @@ export default function NutritionCalculatorScreen() {
                 if (existingPlan.formula) setFormula(existingPlan.formula);
                 if (existingPlan.objective) setObjective(existingPlan.objective);
                 if (existingPlan.caloric_adjustment) setCaloricAdjustment(existingPlan.caloric_adjustment.toString());
+                if (existingPlan.notes) {
+                    setNotes(existingPlan.notes);
+                } else if (existingPlan.description) {
+                    const descParts = existingPlan.description.split('Objetivo:');
+                    if (descParts[0] && descParts[0].trim()) {
+                        setNotes(descParts[0].trim());
+                    }
+                }
+                if (existingPlan.additional_comments) {
+                    setAdditionalComments(existingPlan.additional_comments);
+                }
 
                 let rawMeals: any[] = [];
                 if (Array.isArray(existingPlan.meals)) {
@@ -164,18 +201,19 @@ export default function NutritionCalculatorScreen() {
 
                 if (rawMeals && rawMeals.length > 0) {
                     const mappedMeals = rawMeals.map((m: any) => ({
-                        id: m.id || m.name.toLowerCase().replace(/\s+/g, ''),
-                        name: m.name,
-                        foods: m.foods.map((f: any) => ({
-                            id: f.fatsecret_food_id,
-                            name: f.name,
-                            servingSize: `${f.serving_size} ${f.serving_unit}`,
-                            calories: f.calories,
-                            protein: f.protein,
-                            carbs: f.carbs,
-                            fat: f.fat,
+                        id: m?.id || (m?.name ? m.name.toLowerCase().replace(/\s+/g, '') : `meal_${Math.random()}`),
+                        name: m?.name || 'Comida',
+                        foods: ((m && m.foods) || []).map((f: any) => ({
+                            id: f?.fatsecret_food_id || f?.id || `food_${Math.random()}`,
+                            name: f?.name || 'Alimento',
+                            servingSize: `${f?.serving_size || 1} ${f?.serving_unit || 'g'}`,
+                            calories: safeFloat(f?.calories),
+                            protein: safeFloat(f?.protein),
+                            carbs: safeFloat(f?.carbs),
+                            fat: safeFloat(f?.fat),
+                            unit: f?.serving_unit || 'g',
                             amountMultiplier: 1,
-                            amountText: String(f.serving_size)
+                            amountText: String(f?.serving_size || '100')
                         }))
                     }));
                     setMeals(mappedMeals);
@@ -185,14 +223,14 @@ export default function NutritionCalculatorScreen() {
     }, [client, planId, plans]);
 
     const calculateRequirements = () => {
-        const w = parseFloat(weight);
-        const h = parseFloat(height);
-        const a = parseInt(age);
-        const activity = parseFloat(activityLevel);
-        const adjustment = parseFloat(caloricAdjustment) || 0;
+        const w = safeFloat(weight);
+        const h = safeFloat(height);
+        const a = safeInt(age);
+        const activity = safeFloat(activityLevel, 1.2);
+        const adjustment = safeFloat(caloricAdjustment, 0);
 
         if (!w || !h || !a) {
-            Alert.alert('Error', 'Por favor ingresa peso, altura y edad.');
+            Alert.alert('Error', 'Por favor ingresa peso, altura y edad válidos.');
             return;
         }
 
@@ -215,7 +253,7 @@ export default function NutritionCalculatorScreen() {
         }
 
         const calculatedTdee = Math.round(rmr * activity);
-        const calculatedTarget = calculatedTdee + adjustment;
+        const calculatedTarget = Math.max(0, calculatedTdee + adjustment);
 
         setTdee(calculatedTdee);
         setTargetCalories(calculatedTarget);
@@ -224,18 +262,31 @@ export default function NutritionCalculatorScreen() {
     };
 
     const calculateMacros = (totalCal: number, w: number) => {
-        const pPerKg = parseFloat(proteinPerKg) || 0;
-        const lPerKg = parseFloat(lipidsPerKg) || 0;
+        const safeW = safeFloat(w);
+        if (safeW <= 0 || totalCal <= 0) {
+            setMacros({
+                proteinGrams: 0,
+                proteinCals: 0,
+                lipidGrams: 0,
+                lipidCals: 0,
+                carbGrams: 0,
+                carbCals: 0
+            });
+            return;
+        }
 
-        const pGrams = pPerKg * w;
-        const pCals = pGrams * 4;
+        const pPerKg = safeFloat(proteinPerKg, 0);
+        const lPerKg = safeFloat(lipidsPerKg, 0);
 
-        const lGrams = lPerKg * w;
-        const lCals = lGrams * 9;
+        const pGrams = safeFloat(pPerKg * safeW);
+        const pCals = safeFloat(pGrams * 4);
 
-        const remainingCals = totalCal - pCals - lCals;
-        const cCals = Math.max(0, remainingCals);
-        const cGrams = cCals / 4;
+        const lGrams = safeFloat(lPerKg * safeW);
+        const lCals = safeFloat(lGrams * 9);
+
+        const remainingCals = Math.max(0, totalCal - pCals - lCals);
+        const cCals = safeFloat(remainingCals);
+        const cGrams = safeFloat(cCals / 4);
 
         setMacros({
             proteinGrams: pGrams,
@@ -243,28 +294,29 @@ export default function NutritionCalculatorScreen() {
             lipidGrams: lGrams,
             lipidCals: lCals,
             carbGrams: cGrams,
-            carbCals: cCals
+            carbCals: cGrams
         });
     };
 
     useEffect(() => {
-        if (targetCalories > 0 && weight) {
-            calculateMacros(targetCalories, parseFloat(weight));
+        const wNum = safeFloat(weight);
+        if (targetCalories > 0 && wNum > 0) {
+            calculateMacros(targetCalories, wNum);
         }
-    }, [proteinPerKg, lipidsPerKg, targetCalories]);
+    }, [proteinPerKg, lipidsPerKg, targetCalories, weight]);
 
     // Diet Builder Logic
     const addMealItem = () => {
-        setMeals(prev => [...prev, { id: `meal-${Date.now()}`, name: '', foods: [] }]);
+        setMeals(prev => [...(prev || []), { id: `meal-${Date.now()}`, name: '', foods: [] }]);
     };
 
     const removeMealItem = (id: string) => {
         Keyboard.dismiss();
-        setMeals(prev => prev.filter(m => m.id !== id));
+        setMeals(prev => (prev || []).filter(m => m && m.id !== id));
     };
 
     const renameMealItem = (id: string, newName: string) => {
-        setMeals(prev => prev.map(m => m.id === id ? { ...m, name: newName } : m));
+        setMeals(prev => (prev || []).map(m => m && m.id === id ? { ...m, name: newName } : m));
     };
 
     const openSearchForMeal = (mealId: string) => {
@@ -279,8 +331,6 @@ export default function NutritionCalculatorScreen() {
         setIsSearching(true);
         try {
             const data = await searchFatSecretFoods(searchQuery);
-            console.log("Raw FatSecret Response:", JSON.stringify(data, null, 2));
-            
             let list: any[] = [];
             if (Array.isArray(data)) {
                 list = data;
@@ -294,7 +344,7 @@ export default function NutritionCalculatorScreen() {
                 list = [data];
             }
             
-            setSearchResults(list);
+            setSearchResults(list.filter(Boolean));
         } catch (error) {
             console.error('Error searching foods:', error);
             Alert.alert('Error', 'No se pudieron buscar los alimentos');
@@ -307,45 +357,53 @@ export default function NutritionCalculatorScreen() {
         let macrosDict = { calories: 0, fat: 0, carbs: 0, protein: 0 };
         if (!description || typeof description !== 'string') return macrosDict;
 
-        const matchCalories = description.match(/(?:Calories|Calorías):\s*([\d.,]+)\s*kcal/i);
+        const matchCalories = description.match(/(?:Calories|Calorías|Calorias):\s*([\d.,]+)\s*kcal/i);
         const matchFat = description.match(/(?:Fat|Grasa):\s*([\d.,]+)\s*g/i);
         const matchCarbs = description.match(/(?:Carbs|Carbh|Carbohidratos):\s*([\d.,]+)\s*g/i);
-        const matchProtein = description.match(/(?:Protein|Prot|Proteína):\s*([\d.,]+)\s*g/i);
+        const matchProtein = description.match(/(?:Protein|Prot|Proteína|Proteina):\s*([\d.,]+)\s*g/i);
 
-        if (matchCalories) macrosDict.calories = parseFloat(matchCalories[1].replace(',', '.')) || 0;
-        if (matchFat) macrosDict.fat = parseFloat(matchFat[1].replace(',', '.')) || 0;
-        if (matchCarbs) macrosDict.carbs = parseFloat(matchCarbs[1].replace(',', '.')) || 0;
-        if (matchProtein) macrosDict.protein = parseFloat(matchProtein[1].replace(',', '.')) || 0;
+        if (matchCalories) macrosDict.calories = safeFloat(matchCalories[1]);
+        if (matchFat) macrosDict.fat = safeFloat(matchFat[1]);
+        if (matchCarbs) macrosDict.carbs = safeFloat(matchCarbs[1]);
+        if (matchProtein) macrosDict.protein = safeFloat(matchProtein[1]);
 
         return macrosDict;
     };
 
     const addFoodToMeal = (foodData: any) => {
+        if (!activeMealId) {
+            Alert.alert('Error', 'No hay una comida seleccionada.');
+            return;
+        }
+
         const parsed = parseFatSecretNutrients(foodData?.food_description);
 
         const newFood: FoodItem = {
             id: foodData?.food_id?.toString() || `fs_${Date.now()}_${Math.random()}`,
             name: typeof foodData?.food_name === 'string' ? foodData.food_name : 'Alimento',
             servingSize: '100g',
-            calories: parsed.calories || 0,
-            fat: parsed.fat || 0,
-            carbs: parsed.carbs || 0,
-            protein: parsed.protein || 0,
+            calories: safeFloat(parsed.calories),
+            fat: safeFloat(parsed.fat),
+            carbs: safeFloat(parsed.carbs),
+            protein: safeFloat(parsed.protein),
             unit: 'g',
             amountMultiplier: 1,
             amountText: '100',
         };
 
-        setMeals(prev => prev.map(m => {
-            if (m.id === activeMealId) {
-                return { ...m, foods: [...m.foods, newFood] };
+        const targetMeal = meals.find(m => m && m.id === activeMealId);
+        const mealName = targetMeal?.name || 'la comida';
+
+        setMeals(prev => (prev || []).map(m => {
+            if (m && m.id === activeMealId) {
+                return { ...m, foods: [...((m && m.foods) || []), newFood] };
             }
             return m;
         }));
 
         Keyboard.dismiss();
         setIsSearchModalOpen(false);
-        showToast.success('Alimento añadido a ' + activeMealId);
+        showToast.success('Alimento añadido a ' + mealName);
     };
 
     const addManualFoodToMeal = () => {
@@ -354,46 +412,54 @@ export default function NutritionCalculatorScreen() {
             return;
         }
 
+        if (!activeMealId) {
+            Alert.alert('Error', 'No hay una comida seleccionada.');
+            return;
+        }
+
         const value = parseQuantity(manualFood.quantity);
 
         let amountMultiplier = 1;
         if (manualFood.unit === 'g' || manualFood.unit === 'ml') {
-            amountMultiplier = value / 100;
+            amountMultiplier = safeFloat(value / 100, 1);
         } else {
-            amountMultiplier = value;
+            amountMultiplier = safeFloat(value, 1);
         }
+
+        const targetMeal = meals.find(m => m && m.id === activeMealId);
+        const mealName = targetMeal?.name || 'la comida';
 
         const newFood: FoodItem = {
             id: `manual_${Date.now()}`,
             name: manualFood.name,
             servingSize: (manualFood.unit === 'g' || manualFood.unit === 'ml') ? `100${manualFood.unit}` : `1 ${manualFood.unit}`,
-            calories: 0,
-            protein: 0,
-            carbs: 0,
-            fat: 0,
+            calories: safeFloat(manualFood.calories),
+            protein: safeFloat(manualFood.protein),
+            carbs: safeFloat(manualFood.carbs),
+            fat: safeFloat(manualFood.fat),
             unit: manualFood.unit,
             amountMultiplier: amountMultiplier,
             amountText: manualFood.quantity,
         };
 
-        setMeals(prev => prev.map(m => {
-            if (m.id === activeMealId) {
-                return { ...m, foods: [...m.foods, newFood] };
+        setMeals(prev => (prev || []).map(m => {
+            if (m && m.id === activeMealId) {
+                return { ...m, foods: [...((m && m.foods) || []), newFood] };
             }
             return m;
         }));
 
         Keyboard.dismiss();
         setIsSearchModalOpen(false);
-        setManualFood({ name: '', quantity: '', unit: 'g' });
-        showToast.success('Alimento manual añadido');
+        setManualFood({ name: '', quantity: '', unit: 'g', calories: '', protein: '', carbs: '', fat: '' });
+        showToast.success('Alimento manual añadido a ' + mealName);
     };
 
     const removeFoodFromMeal = (mealId: string, index: number) => {
         Keyboard.dismiss();
-        setMeals(prev => prev.map(m => {
-            if (m.id === mealId) {
-                const newFoods = [...(m.foods || [])];
+        setMeals(prev => (prev || []).map(m => {
+            if (m && m.id === mealId) {
+                const newFoods = [...((m && m.foods) || [])];
                 newFoods.splice(index, 1);
                 return { ...m, foods: newFoods };
             }
@@ -402,17 +468,17 @@ export default function NutritionCalculatorScreen() {
     };
 
     const updateFoodAmount = (mealId: string, index: number, textValue: string) => {
-        setMeals(prev => prev.map(m => {
-            if (m.id === mealId) {
-                const newFoods = m.foods.map((food, fIdx) => {
+        setMeals(prev => (prev || []).map(m => {
+            if (m && m.id === mealId) {
+                const newFoods = ((m && m.foods) || []).map((food, fIdx) => {
                     if (fIdx !== index) return food;
                     const updated = { ...food, amountText: textValue };
                     const value = parseQuantity(textValue);
 
                     if (['pz', 'porcion', 'taza'].includes(updated.unit || '')) {
-                        updated.amountMultiplier = value;
+                        updated.amountMultiplier = safeFloat(value);
                     } else {
-                        updated.amountMultiplier = value / 100;
+                        updated.amountMultiplier = safeFloat(value / 100);
                     }
                     return updated;
                 });
@@ -423,10 +489,11 @@ export default function NutritionCalculatorScreen() {
     };
 
     const toggleFoodUnit = (mealId: string, index: number) => {
-        setMeals(prev => prev.map(m => {
-            if (m.id === mealId) {
-                const newFoods = [...m.foods];
-                const currentFood = { ...newFoods[index] }; // create shallow copy
+        setMeals(prev => (prev || []).map(m => {
+            if (m && m.id === mealId) {
+                const newFoods = [...((m && m.foods) || [])];
+                if (!newFoods[index]) return m;
+                const currentFood = { ...newFoods[index] };
                 const currentUnit = currentFood.unit || 'g';
 
                 if (currentUnit === 'g') {
@@ -464,21 +531,23 @@ export default function NutritionCalculatorScreen() {
                 name: passedName ? String(passedName) : (client?.name ? `Plan Nutricional - ${client.name}` : undefined),
                 description: passedDesc ? String(passedDesc) : undefined,
                 gender,
-                weight: parseFloat(weight) || 0,
-                height: parseFloat(height) || 0,
-                age: parseInt(age) || 0,
-                activity_level: parseFloat(activityLevel) || 1.2,
+                weight: safeFloat(weight),
+                height: safeFloat(height),
+                age: safeInt(age),
+                activity_level: safeFloat(activityLevel, 1.2),
                 formula,
                 objective,
-                caloric_adjustment: parseFloat(caloricAdjustment) || 0,
-                tdee: tdee || 0,
-                target_calories: targetCalories || 0,
-                protein_per_kg: parseFloat(proteinPerKg) || 0,
-                lipids_per_kg: parseFloat(lipidsPerKg) || 0,
-                protein_grams: macros.proteinGrams || 0,
-                lipid_grams: macros.lipidGrams || 0,
-                carb_grams: macros.carbGrams || 0,
-                meals_data: JSON.stringify(meals), // Stored as JSON string
+                caloric_adjustment: safeFloat(caloricAdjustment),
+                tdee: safeFloat(tdee),
+                target_calories: safeFloat(targetCalories),
+                protein_per_kg: safeFloat(proteinPerKg),
+                lipids_per_kg: safeFloat(lipidsPerKg),
+                protein_grams: safeFloat(macros.proteinGrams),
+                lipid_grams: safeFloat(macros.lipidGrams),
+                carb_grams: safeFloat(macros.carbGrams),
+                notes: notes.trim(),
+                additional_comments: additionalComments.trim(),
+                meals_data: JSON.stringify(meals || []),
                 date: new Date().toISOString().split('T')[0]
             };
 
@@ -502,26 +571,21 @@ export default function NutritionCalculatorScreen() {
 
     // Calculate Global Accumulators
     const totalAccumulated = (meals || []).reduce((acc, meal) => {
-        (meal?.foods || []).forEach(f => {
-            const mult = (f.amountMultiplier === undefined || isNaN(f.amountMultiplier)) ? 1 : f.amountMultiplier;
-            acc.calories += (Number(f.calories) || 0) * mult;
-            acc.protein += (Number(f.protein) || 0) * mult;
-            acc.carbs += (Number(f.carbs) || 0) * mult;
-            acc.fat += (Number(f.fat) || 0) * mult;
+        ((meal && meal.foods) || []).forEach(f => {
+            if (!f) return;
+            const mult = safeFloat(f.amountMultiplier, 1);
+            acc.calories += safeFloat(f.calories) * mult;
+            acc.protein += safeFloat(f.protein) * mult;
+            acc.carbs += safeFloat(f.carbs) * mult;
+            acc.fat += safeFloat(f.fat) * mult;
         });
         return {
-            calories: isNaN(acc.calories) ? 0 : acc.calories,
-            protein: isNaN(acc.protein) ? 0 : acc.protein,
-            carbs: isNaN(acc.carbs) ? 0 : acc.carbs,
-            fat: isNaN(acc.fat) ? 0 : acc.fat,
+            calories: safeFloat(acc.calories),
+            protein: safeFloat(acc.protein),
+            carbs: safeFloat(acc.carbs),
+            fat: safeFloat(acc.fat),
         };
     }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
-
-    const series = [
-        { value: Math.max(1, macros.proteinCals), color: MuscleGroupColors['Pecho'] || Colors.danger },         // Using Red for Protein
-        { value: Math.max(1, macros.carbCals), color: MuscleGroupColors['Hombros'] || Colors.accent },     // Using Yellow/Accent for Carbs
-        { value: Math.max(1, macros.lipidCals), color: MuscleGroupColors['Cuádriceps'] || '#00C853' } // Using Blue/Green for Fats
-    ];
 
     return (
         <KeyboardAvoidingView
@@ -530,7 +594,7 @@ export default function NutritionCalculatorScreen() {
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             <Stack.Screen options={{ headerShown: false }} />
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <ArrowLeft size={24} color={Colors.text} />
                 </TouchableOpacity>
@@ -670,7 +734,7 @@ export default function NutritionCalculatorScreen() {
                                 </View>
                                 <View style={styles.adjRow}>
                                     <Text style={styles.adjLabel}>Carbohidratos (g/kg):</Text>
-                                    <TextInput style={[styles.adjInput, { backgroundColor: Colors.surface, color: Colors.textMuted }]} editable={false} value={(macros.carbGrams / parseFloat(weight)).toFixed(1)} />
+                                    <TextInput style={[styles.adjInput, { backgroundColor: Colors.surface, color: Colors.textMuted }]} editable={false} value={safeFloat(weight) > 0 ? (safeFloat(macros.carbGrams) / safeFloat(weight)).toFixed(1) : '0.0'} />
                                 </View>
                             </View>
 
@@ -679,9 +743,9 @@ export default function NutritionCalculatorScreen() {
                                 <PieChart
                                     widthAndHeight={140}
                                     series={[
-                                        { value: Math.max(1, macros.proteinCals || 1), color: MuscleGroupColors['Pecho'] || Colors.danger },
-                                        { value: Math.max(1, macros.carbCals || 1), color: MuscleGroupColors['Hombros'] || Colors.accent },
-                                        { value: Math.max(1, macros.lipidCals || 1), color: MuscleGroupColors['Cuádriceps'] || '#00C853' }
+                                        { value: Math.max(1, safeFloat(macros.proteinCals, 1)), color: MuscleGroupColors['Pecho'] || Colors.danger },
+                                        { value: Math.max(1, safeFloat(macros.carbCals, 1)), color: MuscleGroupColors['Hombros'] || Colors.accent },
+                                        { value: Math.max(1, safeFloat(macros.lipidCals, 1)), color: MuscleGroupColors['Cuádriceps'] || '#00C853' }
                                     ]}
                                     cover={{ radius: 0.5, color: Colors.background }}
                                 />
@@ -817,6 +881,35 @@ export default function NutritionCalculatorScreen() {
                         </View>
                     </View>
                 )}
+
+                {/* 5. Comments / Notes Section */}
+                {tdee > 0 && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>5. Comentarios e Indicaciones</Text>
+                        <Text style={styles.label}>Notas adicionales para el cliente (ej. agua, suplementos, horarios):</Text>
+                        <TextInput
+                            style={[styles.input, { height: 100, textAlignVertical: 'top', paddingTop: 12 }]}
+                            multiline
+                            numberOfLines={4}
+                            placeholder="Ej. Tomar 2.5L de agua al día. Consumir la Comida 1 antes de entrenar..."
+                            placeholderTextColor={Colors.textMuted}
+                            value={notes}
+                            onChangeText={setNotes}
+                        />
+
+                        <Text style={[styles.label, { marginTop: 16 }]}>Comentarios Adicionales:</Text>
+                        <TextInput
+                            style={[styles.input, { height: 80, textAlignVertical: 'top', paddingTop: 12 }]}
+                            multiline
+                            numberOfLines={3}
+                            placeholder="Otros comentarios..."
+                            placeholderTextColor={Colors.textMuted}
+                            value={additionalComments}
+                            onChangeText={setAdditionalComments}
+                        />
+                    </View>
+                )}
+
                 {tdee > 0 && (
                     <TouchableOpacity style={[styles.mainSaveBtn, isSaving && { opacity: 0.7 }]} onPress={handleSavePlan} disabled={isSaving}>
                         {isSaving ? (
@@ -921,6 +1014,56 @@ export default function NutritionCalculatorScreen() {
                                 value={manualFood.quantity} 
                                 onChangeText={(val) => setManualFood(prev => ({ ...prev, quantity: val }))} 
                             />
+
+                            <View style={styles.row}>
+                                <View style={styles.col}>
+                                    <Text style={styles.label}>Calorías (kcal):</Text>
+                                    <TextInput 
+                                        style={styles.input} 
+                                        keyboardType="decimal-pad" 
+                                        placeholder="Ej. 250" 
+                                        placeholderTextColor={Colors.textMuted} 
+                                        value={manualFood.calories} 
+                                        onChangeText={(val) => setManualFood(prev => ({ ...prev, calories: val }))} 
+                                    />
+                                </View>
+                                <View style={styles.col}>
+                                    <Text style={styles.label}>Proteínas (g):</Text>
+                                    <TextInput 
+                                        style={styles.input} 
+                                        keyboardType="decimal-pad" 
+                                        placeholder="Ej. 15" 
+                                        placeholderTextColor={Colors.textMuted} 
+                                        value={manualFood.protein} 
+                                        onChangeText={(val) => setManualFood(prev => ({ ...prev, protein: val }))} 
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.row}>
+                                <View style={styles.col}>
+                                    <Text style={styles.label}>Carbohidratos (g):</Text>
+                                    <TextInput 
+                                        style={styles.input} 
+                                        keyboardType="decimal-pad" 
+                                        placeholder="Ej. 30" 
+                                        placeholderTextColor={Colors.textMuted} 
+                                        value={manualFood.carbs} 
+                                        onChangeText={(val) => setManualFood(prev => ({ ...prev, carbs: val }))} 
+                                    />
+                                </View>
+                                <View style={styles.col}>
+                                    <Text style={styles.label}>Grasas (g):</Text>
+                                    <TextInput 
+                                        style={styles.input} 
+                                        keyboardType="decimal-pad" 
+                                        placeholder="Ej. 5" 
+                                        placeholderTextColor={Colors.textMuted} 
+                                        value={manualFood.fat} 
+                                        onChangeText={(val) => setManualFood(prev => ({ ...prev, fat: val }))} 
+                                    />
+                                </View>
+                            </View>
 
                             <TouchableOpacity style={styles.calcBtn} onPress={addManualFoodToMeal}>
                                 <Plus size={18} color="#fff" />

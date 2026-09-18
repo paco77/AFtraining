@@ -4,7 +4,7 @@ import api from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Camera, Check, FileText, Plus, Scale, Trash, Activity } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -18,10 +18,12 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function ClientProgressScreen() {
-    const { id } = useLocalSearchParams();
+export default function ClientProgressEditScreen() {
+    const { item, clientId } = useLocalSearchParams();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
 
     const [weight, setWeight] = useState('');
     const [comments, setComments] = useState('');
@@ -31,7 +33,43 @@ export default function ClientProgressScreen() {
         side: null as string | null,
         back: null as string | null,
     });
+    
+    // Original photo paths (URLs from API)
+    const [originalPhotos, setOriginalPhotos] = useState({
+        front: null as string | null,
+        side: null as string | null,
+        back: null as string | null,
+    });
+    
     const [isLoading, setIsLoading] = useState(false);
+    const [progressId, setProgressId] = useState<string | null>(null);
+
+    useEffect(() => {
+        try {
+            if (typeof item === 'string') {
+                const progress = JSON.parse(item);
+                setProgressId(progress.id);
+                setWeight(progress.weight ? String(progress.weight) : '');
+                setComments(progress.comments || '');
+                
+                if (progress.measurements && Object.keys(progress.measurements).length > 0) {
+                    const measArr = Object.entries(progress.measurements).map(([k, v]) => ({
+                        name: k,
+                        value: String(v)
+                    }));
+                    setDynamicMeasurements(measArr);
+                }
+
+                setOriginalPhotos({
+                    front: progress.front_photo_url || progress.front_photo_path || progress.front_photo || null,
+                    side: progress.side_photo_url || progress.side_photo_path || progress.side_photo || null,
+                    back: progress.back_photo_url || progress.back_photo_path || progress.back_photo || null,
+                });
+            }
+        } catch (e) {
+            console.error('Error parsing progress item for edit', e);
+        }
+    }, [item]);
 
     const handleAddMeasurement = () => {
         setDynamicMeasurements(prev => [...prev, { name: '', value: '' }]);
@@ -94,7 +132,7 @@ export default function ClientProgressScreen() {
     };
 
     const handleSave = async () => {
-        if (!weight && !comments && !photos.front && !photos.back) {
+        if (!weight && !comments && !photos.front && !photos.back && !originalPhotos.front && !originalPhotos.back) {
             Alert.alert('Error', 'Por favor ingresa al menos un dato para guardar el progreso.');
             return;
         }
@@ -102,8 +140,7 @@ export default function ClientProgressScreen() {
         setIsLoading(true);
         try {
             const formData = new FormData();
-            formData.append('client_id', String(id));
-            formData.append('recorded_at', new Date().toISOString().split('T')[0]);
+            formData.append('_method', 'PUT');
             if (weight) formData.append('weight', weight);
             if (comments) formData.append('comments', comments);
 
@@ -115,13 +152,15 @@ export default function ClientProgressScreen() {
             });
             if (Object.keys(measurementsObj).length > 0) {
                 formData.append('measurements', JSON.stringify(measurementsObj));
+            } else {
+                formData.append('measurements', '{}');
             }
 
             ['front', 'side', 'back'].forEach(sideStr => {
                 const uri = (photos as any)[sideStr];
                 if (uri) {
                     const filename = uri.split('/').pop() || 'photo.jpg';
-                    const match = /\.(\w+)$/.exec(filename);
+                    const match = /\\.(\\w+)$/.exec(filename);
                     const type = match ? `image/${match[1]}` : `image`;
                     // @ts-ignore
                     formData.append(`${sideStr}_photo`, {
@@ -132,38 +171,44 @@ export default function ClientProgressScreen() {
                 }
             });
 
-            await api.post(`clients/${id}/progress`, formData, {
+            await api.post(`clients/${clientId}/progress/${progressId}`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
-            showToast.success('Progreso registrado correctamente');
+            showToast.success('Progreso actualizado correctamente');
             router.back();
+            // Since we updated, it might be good to go back to profile/client screen. 
+            // The router.back() will go to detail screen, which might need refresh.
+            // A more robust way is navigating replacing or ensuring context fetches.
         } catch (error) {
             console.error(error);
-            showToast.error('No se pudo guardar el progreso');
+            showToast.error('No se pudo actualizar el progreso');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const renderPhotoSelector = (label: string, key: keyof typeof photos) => (
-        <View style={styles.photoBox}>
-            <Text style={styles.photoLabel}>{label}</Text>
-            <TouchableOpacity
-                style={[styles.photoBtn, photos[key] && styles.photoBtnFilled]}
-                onPress={() => handlePickPhoto(key)}
-            >
-                {photos[key] ? (
-                    <Image source={{ uri: photos[key]! }} style={styles.previewImage} />
-                ) : (
-                    <View style={styles.photoPlaceholder}>
-                        <Camera size={24} color={Colors.textMuted} />
-                        <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
-                    </View>
-                )}
-            </TouchableOpacity>
-        </View>
-    );
+    const renderPhotoSelector = (label: string, key: keyof typeof photos) => {
+        const previewUrl = photos[key] || originalPhotos[key];
+        return (
+            <View style={styles.photoBox}>
+                <Text style={styles.photoLabel}>{label}</Text>
+                <TouchableOpacity
+                    style={[styles.photoBtn, previewUrl && styles.photoBtnFilled]}
+                    onPress={() => handlePickPhoto(key)}
+                >
+                    {previewUrl ? (
+                        <Image source={{ uri: previewUrl }} style={styles.previewImage} />
+                    ) : (
+                        <View style={styles.photoPlaceholder}>
+                            <Camera size={24} color={Colors.textMuted} />
+                            <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </View>
+        );
+    };
 
     return (
         <KeyboardAvoidingView
@@ -176,7 +221,7 @@ export default function ClientProgressScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <ArrowLeft size={24} color={Colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Registrar Progreso</Text>
+                <Text style={styles.headerTitle}>Editar Progreso</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -274,7 +319,7 @@ export default function ClientProgressScreen() {
                     ) : (
                         <>
                             <Check size={20} color="#000" />
-                            <Text style={styles.submitBtnText}>Guardar Progreso</Text>
+                            <Text style={styles.submitBtnText}>Actualizar Progreso</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -295,7 +340,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: Spacing.md,
-        paddingTop: Platform.OS === 'ios' ? 60 : 20,
         paddingBottom: 20,
         backgroundColor: Colors.surface,
         borderBottomWidth: 1,
@@ -307,7 +351,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '800',
         color: Colors.text,
         letterSpacing: -0.5,

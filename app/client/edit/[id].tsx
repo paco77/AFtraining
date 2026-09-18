@@ -1,22 +1,20 @@
 import { Colors, Spacing } from '@/constants/theme';
 import { useUser } from '@/context/UserContext';
 import { showToast } from '@/services/toast';
+import api from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
     ArrowLeft,
     Camera,
     Check,
-    Eye,
-    EyeOff,
-    Lock,
     User,
     Watch,
     Activity,
     Plus,
     Trash
 } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -32,10 +30,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function NewClientScreen() {
+export default function EditClientScreen() {
+    const { id } = useLocalSearchParams();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { addClient, currentUser } = useUser();
+    const { clients, refreshProfile } = useUser();
+
+    const client = useMemo(() => clients.find(c => String(c.id) === String(id)), [clients, id]);
 
     // Personal Data
     const [name, setName] = useState('');
@@ -47,7 +48,139 @@ export default function NewClientScreen() {
     const [objectives, setObjectives] = useState('');
 
     // Metrics / Measurements
-    const [dynamicMeasurements, setDynamicMeasurements] = useState([{ name: '% Grasa', value: '' }]);
+    const [dynamicMeasurements, setDynamicMeasurements] = useState<{name: string; value: string}[]>([]);
+
+    // Photos
+    const [photos, setPhotos] = useState({
+        profile: null as string | null,
+        front: null as string | null,
+        side: null as string | null,
+        back: null as string | null,
+    });
+    
+    // Existing photo URLs (so we can show them if not overridden)
+    const [existingPhotos, setExistingPhotos] = useState({
+        profile: null as string | null,
+        front: null as string | null,
+        side: null as string | null,
+        back: null as string | null,
+    });
+
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLoaded, setIsLoaded] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        if (client) {
+            if (isMounted) {
+                setName(client.name || '');
+                setEmail(client.email || '');
+                setAge(client.age ? String(client.age) : '');
+            }
+            
+            // Note: client object in Context might not map all raw properties, 
+            // but we can try to get them, or fetch the client fresh from the API if needed.
+            // For now, we will do a fresh fetch to ensure we have ALL raw details (like initial_measurements)
+            const fetchFullClient = async () => {
+                try {
+                    const response = await api.get(`clients/${id}`);
+                    const fullClient = response.data.data || response.data;
+                    
+                    if (!isMounted) return;
+
+                    // Remove debug alert
+                    setName(fullClient.name || '');
+                    setEmail(fullClient.email || '');
+                    setAge(fullClient.age ? String(fullClient.age) : '');
+                    setWeight(fullClient.weight ? String(fullClient.weight) : '');
+                    setHeight(fullClient.height ? String(fullClient.height) : '');
+                    setTrainingTime(fullClient.training_time || '');
+                    setObjectives(fullClient.objectives || '');
+
+                    // Parse measurements
+                    let measurementsObj = null;
+                    if (fullClient.measurements) {
+                        measurementsObj = typeof fullClient.measurements === 'string' 
+                            ? JSON.parse(fullClient.measurements) 
+                            : fullClient.measurements;
+                    } else if (fullClient.initial_measurements) {
+                        measurementsObj = typeof fullClient.initial_measurements === 'string' 
+                            ? JSON.parse(fullClient.initial_measurements) 
+                            : fullClient.initial_measurements;
+                    } else {
+                        // Fallback: fetch from progress history (first evaluation)
+                        try {
+                            const progRes = await api.get(`clients/${id}/progress`);
+                            const progData = Array.isArray(progRes.data) ? progRes.data : progRes.data.data || [];
+                            if (progData.length > 0) {
+                                // Get the oldest record
+                                const oldest = progData.sort((a: any, b: any) => 
+                                    new Date(a.created_at || a.recorded_at).getTime() - new Date(b.created_at || b.recorded_at).getTime()
+                                )[0];
+                                if (oldest && oldest.measurements) {
+                                    measurementsObj = typeof oldest.measurements === 'string' 
+                                        ? JSON.parse(oldest.measurements) 
+                                        : oldest.measurements;
+                                }
+                            }
+                        } catch (e) {
+                            console.log("No se pudo obtener el historial de progreso para métricas", e);
+                        }
+                    }
+
+                    if (measurementsObj && Object.keys(measurementsObj).length > 0) {
+                        const arr = Object.keys(measurementsObj).map(k => ({ name: k, value: String(measurementsObj[k]) }));
+                        setDynamicMeasurements(arr);
+                    } else {
+                        setDynamicMeasurements([{ name: '% Grasa', value: '' }]);
+                    }
+
+                    const formatUrl = (path: string | null) => {
+                        if (!path) return null;
+                        
+                        // Si la ruta es relativa (no empieza con http), asume que es de S3 (o puedes cambiarlo según tu entorno)
+                        if (!path.startsWith('http')) {
+                            return `https://aftraining-storage.sfo2.digitaloceanspaces.com/${path}`;
+                        }
+
+                        // Si la API devuelve la URL de producción pero estamos probando en local (192.168.x.x),
+                        // la imagen fallará en la app. La reemplazamos temporalmente para que apunte al servidor local:
+                        if (path.includes('aftraining.skecomponent.mx/storage')) {
+                            return path.replace('https://aftraining.skecomponent.mx', 'http://192.168.3.198:8000');
+                        }
+
+                        return path;
+                    };
+
+                    // Existing photos
+                    setExistingPhotos({
+                        profile: formatUrl(fullClient.profile_photo_url || fullClient.profile_photo_path),
+                        front: formatUrl(fullClient.front_photo_url || fullClient.front_photo_path || fullClient.front_photo),
+                        side: formatUrl(fullClient.side_photo_url || fullClient.side_photo_path || fullClient.side_photo),
+                        back: formatUrl(fullClient.back_photo_url || fullClient.back_photo_path || fullClient.back_photo),
+                    });
+                    
+                } catch (error) {
+                    console.error('Error fetching client details:', error);
+                } finally {
+                    if (isMounted) {
+                        setIsLoaded(true);
+                    }
+                }
+            };
+            
+            fetchFullClient();
+        } else {
+            if (isMounted) {
+                setIsLoaded(true);
+            }
+        }
+
+        return () => {
+            isMounted = false;
+        };
+    }, [client, id]);
 
     const handleAddMeasurement = () => {
         setDynamicMeasurements(prev => [...prev, { name: '', value: '' }]);
@@ -65,23 +198,9 @@ export default function NewClientScreen() {
         });
     };
 
-    // Credentials
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-
-    // Photos (simulated)
-    const [photos, setPhotos] = useState({
-        profile: null as string | null,
-        front: null as string | null,
-        side: null as string | null,
-        back: null as string | null,
-    });
-    const [isSaving, setIsSaving] = useState(false);
-
     const handleSave = async () => {
-        if (!name || !username || !password || !email) {
-            Alert.alert('Error', 'Por favor completa el nombre, email, usuario y contraseña.');
+        if (!name || !email) {
+            Alert.alert('Error', 'Por favor completa el nombre y email.');
             return;
         }
 
@@ -92,31 +211,54 @@ export default function NewClientScreen() {
             }
         });
 
-        const clientData = {
-            name,
-            username,
-            email,
-            password,
-            age: Number(age) || null,
-            weight: Number(weight) || null,
-            height: Number(height) || null,
-            training_time: trainingTime,
-            objectives,
-            measurements: Object.keys(measurementsObj).length > 0 ? JSON.stringify(measurementsObj) : null,
-        };
-
         setIsSaving(true);
         try {
-            await addClient(clientData as any, photos);
-            showToast.success('Cliente registrado correctamente');
+            const formData = new FormData();
+            formData.append('_method', 'PUT');
+            formData.append('name', name);
+            formData.append('email', email);
+            if (age) formData.append('age', age);
+            if (weight) formData.append('weight', weight);
+            if (height) formData.append('height', height);
+            if (trainingTime) formData.append('training_time', trainingTime);
+            if (objectives) formData.append('objectives', objectives);
+            
+            if (Object.keys(measurementsObj).length > 0) {
+                formData.append('measurements', JSON.stringify(measurementsObj));
+            } else {
+                formData.append('measurements', '{}');
+            }
+
+            // Append photos if they were changed
+            ['profile', 'front', 'side', 'back'].forEach(sideStr => {
+                const uri = (photos as any)[sideStr];
+                if (uri) {
+                    const filename = uri.split('/').pop() || 'photo.jpg';
+                    const match = /\.(\w+)$/.exec(filename);
+                    const type = match ? `image/${match[1]}` : `image`;
+                    // @ts-ignore
+                    formData.append(sideStr === 'profile' ? 'profile_photo' : `${sideStr}_photo`, {
+                        uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+                        name: filename,
+                        type,
+                    });
+                }
+            });
+
+            await api.post(`clients/${id}`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            await refreshProfile();
+            showToast.success('Perfil actualizado correctamente');
             router.back();
         } catch (error: any) {
-            console.log('Error al registrar cliente:', error.response?.data || error.message);
+            console.log('Error al actualizar cliente:', error.response?.data || error.message);
             if (error.response?.data?.errors) {
                 const firstError: any = Object.values(error.response.data.errors)[0];
                 Alert.alert('Error de validación', Array.isArray(firstError) ? firstError[0] : firstError);
             } else {
-                const errorMsg = error.response?.data?.message || 'No se pudo registrar al cliente';
+                const errorMsg = error.response?.data?.message || 'No se pudo actualizar el perfil';
                 Alert.alert('Error', errorMsg);
             }
         } finally {
@@ -126,7 +268,7 @@ export default function NewClientScreen() {
 
     const handlePickPhoto = async (key: keyof typeof photos) => {
         Alert.alert(
-            'Foto de progreso',
+            'Foto',
             '¿Qué deseas hacer?',
             [
                 {
@@ -168,24 +310,36 @@ export default function NewClientScreen() {
         );
     };
 
-    const renderPhotoSelector = (label: string, key: keyof typeof photos) => (
-        <View style={styles.photoBox}>
-            <Text style={styles.photoLabel}>{label}</Text>
-            <TouchableOpacity
-                style={[styles.photoBtn, photos[key] && styles.photoBtnFilled]}
-                onPress={() => handlePickPhoto(key)}
-            >
-                {photos[key] ? (
-                    <Image source={{ uri: photos[key]! }} style={styles.previewImage} />
-                ) : (
-                    <View style={styles.photoPlaceholder}>
-                        <Camera size={24} color={Colors.textMuted} />
-                        <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
-                    </View>
-                )}
-            </TouchableOpacity>
-        </View>
-    );
+    const renderPhotoSelector = (label: string, key: keyof typeof photos) => {
+        const currentUri = photos[key] || existingPhotos[key];
+        return (
+            <View style={styles.photoBox}>
+                <Text style={styles.photoLabel}>{label}</Text>
+                <TouchableOpacity
+                    style={[styles.photoBtn, currentUri && styles.photoBtnFilled]}
+                    onPress={() => handlePickPhoto(key)}
+                >
+                    {currentUri ? (
+                        <Image source={{ uri: currentUri! }} style={styles.previewImage} />
+                    ) : (
+                        <View style={styles.photoPlaceholder}>
+                            <Camera size={24} color={Colors.textMuted} />
+                            <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </View>
+        );
+    };
+
+    if (!isLoaded) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <ActivityIndicator size="large" color={Colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <KeyboardAvoidingView
@@ -193,11 +347,13 @@ export default function NewClientScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
+            <Stack.Screen options={{ headerShown: false }} />
+
             <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <ArrowLeft size={24} color={Colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Nuevo Cliente</Text>
+                <Text style={styles.headerTitle}>Editar Cliente</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -206,7 +362,6 @@ export default function NewClientScreen() {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                {/* Visual Section: User Info */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <User size={18} color={Colors.primary} />
@@ -215,11 +370,11 @@ export default function NewClientScreen() {
 
                     <View style={{ alignItems: 'center', marginBottom: 20 }}>
                         <TouchableOpacity
-                            style={[styles.photoBtn, { width: 100, height: 100, borderRadius: 50 }, photos.profile && styles.photoBtnFilled]}
+                            style={[styles.photoBtn, { width: 100, height: 100, borderRadius: 50 }, (photos.profile || existingPhotos.profile) && styles.photoBtnFilled]}
                             onPress={() => handlePickPhoto('profile')}
                         >
-                            {photos.profile ? (
-                                <Image source={{ uri: photos.profile }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
+                            {(photos.profile || existingPhotos.profile) ? (
+                                <Image source={{ uri: photos.profile || existingPhotos.profile! }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
                             ) : (
                                 <View style={styles.photoPlaceholder}>
                                     <Camera size={24} color={Colors.textMuted} />
@@ -279,7 +434,6 @@ export default function NewClientScreen() {
                     </View>
                 </View>
 
-                {/* Training Experience */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Watch size={18} color={Colors.primary} />
@@ -305,11 +459,10 @@ export default function NewClientScreen() {
                     />
                 </View>
 
-                {/* Advanced Biometrics / Measurements */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Activity size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Biometría Avanzada</Text>
+                        <Text style={styles.sectionTitle}>Biometría Inicial</Text>
                     </View>
                     
                     {dynamicMeasurements.map((meas, idx) => (
@@ -344,56 +497,15 @@ export default function NewClientScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Photos */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Camera size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Fotos de Progreso</Text>
+                        <Text style={styles.sectionTitle}>Fotos Iniciales</Text>
                     </View>
                     <View style={styles.photoGrid}>
                         {renderPhotoSelector('Frontal', 'front')}
                         {renderPhotoSelector('Lateral', 'side')}
                         {renderPhotoSelector('Espalda', 'back')}
-                    </View>
-                </View>
-
-                {/* Login Info */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Lock size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Credenciales de Acceso</Text>
-                    </View>
-                    <Text style={styles.infoText}>Asigna un usuario y contraseña para que el cliente pueda entrar.</Text>
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Nombre de Usuario"
-                        autoCapitalize="none"
-                        placeholderTextColor={Colors.textMuted}
-                        value={username}
-                        onChangeText={setUsername}
-                    />
-
-                    <View style={styles.passwordContainer}>
-                        <TextInput
-                            style={styles.passwordInput}
-                            placeholder="Contraseña (8 caracteres)"
-                            secureTextEntry={!showPassword}
-                            placeholderTextColor={Colors.textMuted}
-                            value={password}
-                            onChangeText={setPassword}
-                        />
-                        <TouchableOpacity
-                            onPress={() => setShowPassword(!showPassword)}
-                            style={styles.eyeIcon}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            {showPassword ? (
-                                <EyeOff size={20} color={Colors.textMuted} />
-                            ) : (
-                                <Eye size={20} color={Colors.textMuted} />
-                            )}
-                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -408,7 +520,7 @@ export default function NewClientScreen() {
                     ) : (
                         <>
                             <Check size={20} color="#000" />
-                            <Text style={styles.submitBtnText}>Registrar Cliente</Text>
+                            <Text style={styles.submitBtnText}>Guardar Cambios</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -481,25 +593,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'transparent',
     },
-    passwordContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surfaceLight,
-        borderRadius: 16,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: 'transparent',
-    },
-    passwordInput: {
-        flex: 1,
-        color: Colors.text,
-        fontSize: 15,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-    },
-    eyeIcon: {
-        padding: 14,
-    },
     row: {
         flexDirection: 'row',
         gap: 12,
@@ -552,12 +645,6 @@ const styles = StyleSheet.create({
     previewImage: {
         width: '100%',
         height: '100%',
-    },
-    infoText: {
-        fontSize: 13,
-        color: Colors.textMuted,
-        marginBottom: 16,
-        lineHeight: 20,
     },
     submitBtn: {
         flexDirection: 'row',

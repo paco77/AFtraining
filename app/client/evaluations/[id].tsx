@@ -16,10 +16,15 @@ export default function ClientEvaluations() {
 
     const [evaluations, setEvaluations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [expandedId, setExpandedId] = useState<number | string | null>(null);
 
     // Image Modal State
     const [modalImage, setModalImage] = useState<string | null>(null);
+
+    // Compare State
+    const [compareBase, setCompareBase] = useState<any>(null);
+    const [compareTarget, setCompareTarget] = useState<any>(null);
+    const [isSelectingTarget, setIsSelectingTarget] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -31,27 +36,50 @@ export default function ClientEvaluations() {
         setLoading(true);
         try {
             const response = await api.get(`clients/${id}/progress`);
-            let data = Array.isArray(response.data) ? response.data : response.data.data || [];
-            
-            if (client && (client.weight || client.height)) {
-                data.push({
+            let evals = Array.isArray(response.data) ? response.data : response.data.data || [];
+            const formatUrl = (path: string | null | undefined) => {
+                if (!path) return null;
+                if (!path.startsWith('http')) {
+                    return `https://aftraining-storage.sfo2.digitaloceanspaces.com/${path}`;
+                }
+                if (path.includes('aftraining.skecomponent.mx/storage')) {
+                    return path.replace('https://aftraining.skecomponent.mx', 'http://192.168.3.198:8000');
+                }
+                return path;
+            };
+
+            if (client) {
+                evals.unshift({
                     id: 'initial_bio',
-                    weight: client.weight,
+                    weight: client.starting_weight,
+                    measurements: typeof client.initial_measurements === 'string' 
+                        ? JSON.parse(client.initial_measurements) 
+                        : (client.initial_measurements || {}),
                     created_at: client.created_at || new Date().toISOString(),
-                    comments: 'Biometría Inicial',
-                    measurements: {
-                        Altura: client.height ? `${client.height} cm` : undefined,
-                        Edad: client.age ? `${client.age} años` : undefined
-                    }
+                    comments: 'Datos iniciales del cliente al registrarse en el sistema.',
+                    front_photo_url: formatUrl(client.front_photo_url),
+                    side_photo_url: formatUrl(client.side_photo_url),
+                    back_photo_url: formatUrl(client.back_photo_url)
                 });
             }
 
-            data.sort((a: any, b: any) => {
-                const dateA = new Date(a.created_at || a.recorded_at || 0).getTime();
-                const dateB = new Date(b.created_at || b.recorded_at || 0).getTime();
+            const safeDateStr = (d: any) => typeof d === 'string' ? d.replace(' ', 'T') : d;
+
+            evals = evals.map((ev: any) => ({
+                ...ev,
+                front_photo_url: formatUrl(ev.front_photo_url),
+                side_photo_url: formatUrl(ev.side_photo_url),
+                back_photo_url: formatUrl(ev.back_photo_url)
+            }));
+
+            evals.sort((a: any, b: any) => {
+                const dateA = new Date(safeDateStr(a.created_at || a.recorded_at) || 0).getTime();
+                const dateB = new Date(safeDateStr(b.created_at || b.recorded_at) || 0).getTime();
+                if (isNaN(dateA)) return 1;
+                if (isNaN(dateB)) return -1;
                 return dateB - dateA;
             });
-            setEvaluations(data);
+            setEvaluations(evals);
         } catch (error) {
             console.error('Error fetching evaluations:', error);
         } finally {
@@ -59,8 +87,20 @@ export default function ClientEvaluations() {
         }
     };
 
-    const toggleExpand = (evalId: number) => {
+    const toggleExpand = (evalId: number | string) => {
         setExpandedId(prev => prev === evalId ? null : evalId);
+    };
+
+    const startComparison = (ev: any) => {
+        setCompareBase(ev);
+        setIsSelectingTarget(true);
+    };
+
+    const formatDate = (dateStr: string) => {
+        const safe = typeof dateStr === 'string' ? dateStr.replace(' ', 'T') : null;
+        if (!safe) return new Date().toLocaleDateString();
+        const d = new Date(safe);
+        return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
     };
 
     return (
@@ -68,7 +108,7 @@ export default function ClientEvaluations() {
             <Stack.Screen options={{ headerShown: false }} />
             <StatusBar barStyle="light-content" />
 
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <ArrowLeft size={24} color="#fff" />
                 </TouchableOpacity>
@@ -86,7 +126,7 @@ export default function ClientEvaluations() {
                 ) : (
                     evaluations.map((ev, index) => {
                         const isExpanded = expandedId === ev.id;
-                        const date = new Date(ev.created_at || ev.recorded_at || Date.now()).toLocaleDateString();
+                        const date = formatDate(ev.created_at || ev.recorded_at);
                         const hasPhotos = ev.front_photo_url || ev.side_photo_url || ev.back_photo_url;
                         
                         return (
@@ -164,6 +204,13 @@ export default function ClientEvaluations() {
                                                         </TouchableOpacity>
                                                     ) : null)}
                                                 </View>
+                                                
+                                                <TouchableOpacity 
+                                                    style={styles.compareBtn}
+                                                    onPress={() => startComparison(ev)}
+                                                >
+                                                    <Text style={styles.compareBtnText}>Comparar con otra fecha</Text>
+                                                </TouchableOpacity>
                                             </View>
                                         )}
                                     </View>
@@ -184,9 +231,144 @@ export default function ClientEvaluations() {
                             <Text style={styles.modalCloseText}>Cerrar</Text>
                         </TouchableOpacity>
                         {modalImage && (
-                            <Image source={{ uri: modalImage }} style={styles.fullScreenImage} resizeMode="contain" />
+                            <ScrollView 
+                                maximumZoomScale={4} 
+                                minimumZoomScale={1} 
+                                bouncesZoom={true}
+                                centerContent={true}
+                                style={{ width: '100%', height: '100%' }}
+                                contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Image source={{ uri: modalImage }} style={styles.fullScreenImage} resizeMode="contain" />
+                            </ScrollView>
                         )}
                     </View>
+                </View>
+            </Modal>
+
+            {/* Modal Seleccionador de Fecha a Comparar */}
+            <Modal visible={isSelectingTarget} animationType="slide" transparent={true}>
+                <View style={styles.selectModalOverlay}>
+                    <View style={styles.selectModalContent}>
+                        <View style={styles.selectModalHeader}>
+                            <Text style={styles.selectModalTitle}>Elige fecha para comparar</Text>
+                            <TouchableOpacity onPress={() => setIsSelectingTarget(false)} style={styles.selectModalClose}>
+                                <Text style={styles.selectModalCloseText}>Cerrar</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            {evaluations.filter(e => e.id !== compareBase?.id).map(e => (
+                                <TouchableOpacity 
+                                    key={e.id} 
+                                    style={styles.selectEvalItem}
+                                    onPress={() => {
+                                        setCompareTarget(e);
+                                        setIsSelectingTarget(false);
+                                    }}
+                                >
+                                    <Calendar size={18} color={Colors.textMuted} />
+                                    <Text style={styles.selectEvalText}>{formatDate(e.created_at || e.recorded_at)}</Text>
+                                    <View style={{ flex: 1 }} />
+                                    {e.weight && <Text style={styles.selectEvalSubtext}>{e.weight} kg</Text>}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Modal de Visor Lado a Lado */}
+            <Modal visible={!!compareBase && !!compareTarget} animationType="slide">
+                <View style={[styles.compareViewerContainer, { paddingTop: insets.top }]}>
+                    <View style={styles.compareViewerHeader}>
+                        <TouchableOpacity 
+                            onPress={() => {
+                                setCompareTarget(null);
+                                setCompareBase(null);
+                            }}
+                            style={styles.compareViewerCloseBtn}
+                        >
+                            <ArrowLeft size={24} color={Colors.text} />
+                        </TouchableOpacity>
+                        <Text style={styles.compareViewerTitle}>Comparación</Text>
+                        <View style={{ width: 24 }} />
+                    </View>
+
+                    <View style={styles.compareLabelsRow}>
+                        <View style={styles.compareLabelCol}>
+                            <Text style={styles.compareDateText}>{compareBase ? formatDate(compareBase.created_at || compareBase.recorded_at) : ''}</Text>
+                        </View>
+                        <View style={styles.compareLabelCol}>
+                            <Text style={styles.compareDateText}>{compareTarget ? formatDate(compareTarget.created_at || compareTarget.recorded_at) : ''}</Text>
+                        </View>
+                    </View>
+
+                    <ScrollView 
+                        style={{ flex: 1 }}
+                        maximumZoomScale={4}
+                        minimumZoomScale={1}
+                        bouncesZoom={true}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {/* FRENTE */}
+                        <Text style={styles.compareCategoryTitle}>Frente</Text>
+                        <View style={styles.compareImagesRow}>
+                            <View style={styles.compareImageContainer}>
+                                {compareBase?.front_photo_url ? (
+                                    <Image source={{ uri: compareBase.front_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                            <View style={styles.compareImageContainer}>
+                                {compareTarget?.front_photo_url ? (
+                                    <Image source={{ uri: compareTarget.front_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* LATERAL */}
+                        <Text style={styles.compareCategoryTitle}>Lateral</Text>
+                        <View style={styles.compareImagesRow}>
+                            <View style={styles.compareImageContainer}>
+                                {compareBase?.side_photo_url ? (
+                                    <Image source={{ uri: compareBase.side_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                            <View style={styles.compareImageContainer}>
+                                {compareTarget?.side_photo_url ? (
+                                    <Image source={{ uri: compareTarget.side_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* ESPALDA */}
+                        <Text style={styles.compareCategoryTitle}>Espalda</Text>
+                        <View style={styles.compareImagesRow}>
+                            <View style={styles.compareImageContainer}>
+                                {compareBase?.back_photo_url ? (
+                                    <Image source={{ uri: compareBase.back_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                            <View style={styles.compareImageContainer}>
+                                {compareTarget?.back_photo_url ? (
+                                    <Image source={{ uri: compareTarget.back_photo_url }} style={styles.compareImage} resizeMode="cover" />
+                                ) : (
+                                    <View style={styles.noPhotoBox}><Text style={styles.noPhotoText}>Sin Foto</Text></View>
+                                )}
+                            </View>
+                        </View>
+                        
+                        <View style={{ height: 60 }} />
+                    </ScrollView>
                 </View>
             </Modal>
         </View>
@@ -409,5 +591,137 @@ const styles = StyleSheet.create({
     fullScreenImage: {
         width: '90%',
         height: '100%',
+    },
+    // Nuevos estilos para Comparación
+    compareBtn: {
+        marginTop: 16,
+        padding: 12,
+        backgroundColor: Colors.primary + '15',
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    compareBtnText: {
+        color: Colors.primary,
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    selectModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    selectModalContent: {
+        backgroundColor: Colors.surface,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: Spacing.md,
+        paddingBottom: 40,
+    },
+    selectModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    selectModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    selectModalClose: {
+        padding: 8,
+    },
+    selectModalCloseText: {
+        color: Colors.primary,
+        fontWeight: '600',
+    },
+    selectEvalItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        backgroundColor: Colors.background,
+        borderRadius: 12,
+        marginBottom: 8,
+    },
+    selectEvalText: {
+        marginLeft: 12,
+        fontSize: 16,
+        color: Colors.text,
+        fontWeight: '500',
+    },
+    selectEvalSubtext: {
+        fontSize: 14,
+        color: Colors.textMuted,
+    },
+    compareViewerContainer: {
+        flex: 1,
+        backgroundColor: Colors.background,
+    },
+    compareViewerHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: Spacing.md,
+        backgroundColor: Colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    compareViewerCloseBtn: {
+        padding: 8,
+    },
+    compareViewerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    compareLabelsRow: {
+        flexDirection: 'row',
+        backgroundColor: Colors.surfaceLight,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    compareLabelCol: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    compareDateText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    compareCategoryTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: Colors.primary,
+        textAlign: 'center',
+        marginTop: 20,
+        marginBottom: 8,
+    },
+    compareImagesRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 8,
+    },
+    compareImageContainer: {
+        flex: 1,
+        height: 250,
+        marginHorizontal: 4,
+        backgroundColor: Colors.surface,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    compareImage: {
+        width: '100%',
+        height: '100%',
+    },
+    noPhotoBox: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: Colors.surfaceLight,
+    },
+    noPhotoText: {
+        color: Colors.textMuted,
+        fontSize: 14,
     }
 });

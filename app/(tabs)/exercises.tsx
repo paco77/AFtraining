@@ -25,7 +25,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { SafeVideo } from '@/components/SafeVideo';
 import {
     Alert,
     FlatList,
@@ -223,11 +223,9 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                                 <Text style={styles.detailLabel}>Video/GIF</Text>
                             </View>
                             {exercise.videoUrl.toLowerCase().includes('.mp4') ? (
-                                <ExpoVideo
-                                    source={{ uri: exercise.videoUrl.startsWith('http') ? exercise.videoUrl : `${API_HOST}${exercise.videoUrl.startsWith('/') ? '' : '/'}${exercise.videoUrl}` }}
+                                <SafeVideo
+                                    sourceUri={exercise.videoUrl.startsWith('http') ? exercise.videoUrl : `${API_HOST}${exercise.videoUrl.startsWith('/') ? '' : '/'}${exercise.videoUrl}`}
                                     style={{ width: '100%', height: 250, borderRadius: 12, marginTop: 8, backgroundColor: '#0F172A' }}
-                                    useNativeControls
-                                    resizeMode={ResizeMode.CONTAIN}
                                     isLooping
                                 />
                             ) : (

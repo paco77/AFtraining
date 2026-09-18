@@ -6,7 +6,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
-import { ResizeMode, Video } from 'expo-av';
+import { SafeVideo } from '@/components/SafeVideo';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, CalendarDays, Check, CheckCheck, ChevronDown, ChevronUp, CloudAlert, Dumbbell, MoreVertical, Plus, Timer } from 'lucide-react-native';
@@ -446,12 +446,10 @@ export default function WorkoutScreen() {
             <View style={styles.exerciseContainerDark}>
                 {finalVideoUrl && !isInsideGroup ? (
                     finalVideoUrl.toLowerCase().includes('.mp4') ? (
-                        <Video
-                            source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                        <SafeVideo
+                            sourceUri={finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}`}
                             style={{ width: '100%', height: 250, borderRadius: 16, marginBottom: 16, backgroundColor: '#0F172A' }}
-                            useNativeControls
-                            resizeMode={ResizeMode.CONTAIN}
-                            isLooping
+                            contentFit="contain"
                         />
                     ) : (
                         <Image
@@ -655,10 +653,10 @@ export default function WorkoutScreen() {
                                 >
                                     {finalVideoUrl ? (
                                         finalVideoUrl.toLowerCase().includes('.mp4') ? (
-                                            <Video
-                                                source={{ uri: finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}` }}
+                                            <SafeVideo
+                                                sourceUri={finalVideoUrl.startsWith('http') ? finalVideoUrl : `${API_HOST}${finalVideoUrl.startsWith('/') ? '' : '/'}${finalVideoUrl}`}
                                                 style={{ width: '100%', height: '100%' }}
-                                                resizeMode={ResizeMode.COVER}
+                                                contentFit="cover"
                                             />
                                         ) : (
                                             <Image

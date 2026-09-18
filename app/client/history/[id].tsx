@@ -4,6 +4,7 @@ import api from '@/services/api';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Calendar, ChevronRight, ClipboardList, Dumbbell, Trash2, User } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ActivityIndicator,
     Alert,
@@ -19,6 +20,7 @@ export default function ClientHistory() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const { clients, currentUser } = useUser();
+    const insets = useSafeAreaInsets();
 
     const [plans, setPlans] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -136,7 +138,7 @@ export default function ClientHistory() {
             }} />
             <StatusBar barStyle="light-content" />
 
-            <View style={styles.topHeader}>
+            <View style={[styles.topHeader, { paddingTop: Math.max(insets.top, 20) + 30 }]}>
                 <View style={styles.clientSummary}>
                     <View style={styles.avatarSmall}>
                         <User size={20} color={Colors.primary} />
@@ -155,7 +157,7 @@ export default function ClientHistory() {
                     data={plans}
                     renderItem={renderPlanItem}
                     keyExtractor={(item) => String(item.id)}
-                    contentContainerStyle={styles.listContent}
+                    contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom, 24) + 40 }]}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <View style={styles.emptyIconCircle}>
