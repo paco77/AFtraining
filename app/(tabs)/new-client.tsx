@@ -28,7 +28,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -40,6 +41,7 @@ export default function NewClientScreen() {
     // Personal Data
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
     const [age, setAge] = useState('');
     const [weight, setWeight] = useState('');
     const [height, setHeight] = useState('');
@@ -96,6 +98,7 @@ export default function NewClientScreen() {
             name,
             username,
             email,
+            phone,
             password,
             age: Number(age) || null,
             weight: Number(weight) || null,
@@ -105,23 +108,48 @@ export default function NewClientScreen() {
             measurements: Object.keys(measurementsObj).length > 0 ? JSON.stringify(measurementsObj) : null,
         };
 
-        setIsSaving(true);
-        try {
-            await addClient(clientData as any, photos);
-            showToast.success('Cliente registrado correctamente');
-            router.back();
-        } catch (error: any) {
-            console.log('Error al registrar cliente:', error.response?.data || error.message);
-            if (error.response?.data?.errors) {
-                const firstError: any = Object.values(error.response.data.errors)[0];
-                Alert.alert('Error de validación', Array.isArray(firstError) ? firstError[0] : firstError);
-            } else {
-                const errorMsg = error.response?.data?.message || 'No se pudo registrar al cliente';
-                Alert.alert('Error', errorMsg);
+        const executeSave = async (notifyWhatsApp: boolean) => {
+            setIsSaving(true);
+            try {
+                await addClient(clientData as any, photos);
+                showToast.success('Cliente registrado correctamente');
+                
+                if (notifyWhatsApp) {
+                    const message = `¡Hola ${name}! Tu cuenta en la AppAF ha sido creada. Tu usuario es: ${username} y tu contraseña es: ${password}.`;
+                    const encodedMessage = encodeURIComponent(message);
+                    const url = phone 
+                        ? `whatsapp://send?phone=${phone}&text=${encodedMessage}`
+                        : `whatsapp://send?text=${encodedMessage}`;
+                    
+                    Linking.openURL(url).catch(() => {
+                        Alert.alert('Error', 'No se pudo abrir WhatsApp');
+                    });
+                }
+                
+                router.back();
+            } catch (error: any) {
+                console.log('Error al registrar cliente:', error.response?.data || error.message);
+                if (error.response?.data?.errors) {
+                    const firstError: any = Object.values(error.response.data.errors)[0];
+                    Alert.alert('Error de validación', Array.isArray(firstError) ? firstError[0] : firstError);
+                } else {
+                    const errorMsg = error.response?.data?.message || 'No se pudo registrar al cliente';
+                    Alert.alert('Error', errorMsg);
+                }
+            } finally {
+                setIsSaving(false);
             }
-        } finally {
-            setIsSaving(false);
-        }
+        };
+
+        Alert.alert(
+            'Guardar Cliente',
+            '¿Deseas avisar a este cliente por WhatsApp o simplemente guardar la información?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Solo guardar', onPress: () => executeSave(false) },
+                { text: 'Avisar por WhatsApp', onPress: () => executeSave(true) }
+            ]
+        );
     };
 
     const handlePickPhoto = async (key: keyof typeof photos) => {
@@ -245,6 +273,15 @@ export default function NewClientScreen() {
                         placeholderTextColor={Colors.textMuted}
                         value={email}
                         onChangeText={setEmail}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Teléfono Celular"
+                        keyboardType="phone-pad"
+                        placeholderTextColor={Colors.textMuted}
+                        value={phone}
+                        onChangeText={setPhone}
                     />
 
                     <View style={styles.row}>

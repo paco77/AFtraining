@@ -6,6 +6,7 @@ export interface BaseUser {
     id: string;
     username: string;
     email: string;
+    phone?: string;
     role: UserRole;
     name: string;
     trainingInfo?: string;

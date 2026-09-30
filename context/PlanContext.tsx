@@ -77,6 +77,8 @@ const PlanContext = createContext<PlanContextType>({
     syncOfflineLogs: async () => { },
 });
 
+let globalMuscleGroupIdToName: Record<string, string> = {};
+
 const mapApiExerciseToFrontend = (apiEx: any): Exercise => {
     return {
         id: String(apiEx.id),
@@ -108,7 +110,23 @@ const mapApiPlanToFrontend = (apiPlan: any): MonthlyPlan => {
             id: td.id ? String(td.id) : undefined,
             dayNumber: td.day_number,
             label: td.label,
-            muscleGroups: td.muscle_groups || [],
+            muscleGroups: (() => {
+                let mg = td.muscle_groups || [];
+                if (typeof mg === 'string') {
+                    try { mg = JSON.parse(mg); } catch(e) { mg = []; }
+                }
+                if (Array.isArray(mg) && mg.length === 1 && typeof mg[0] === 'string' && mg[0].startsWith('[')) {
+                    try { mg = JSON.parse(mg[0]); } catch(e) {}
+                }
+                if (typeof mg === 'string') {
+                    try { mg = JSON.parse(mg); } catch(e) { mg = []; }
+                }
+                
+                return (Array.isArray(mg) ? mg : []).map((m: any) => {
+                    const val = typeof m === 'string' ? m : (m?.name || String(m));
+                    return globalMuscleGroupIdToName[val] || val;
+                });
+            })(),
             targetVolumes: td.target_volumes || {},
             comment: td.comment,
             exercises: (td.planned_exercises || td.exercises || td.plannedExercises || []).map((pe: any) => ({
@@ -174,7 +192,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 api.get('muscle-groups')
             ]);
             const exercises = exResponse.data.data.map(mapApiExerciseToFrontend);
-            const groups = mgResponse.data.data.map((mg: any) => mg.name);
+            const groups = mgResponse.data.data.map((mg: any) => {
+                globalMuscleGroupIdToName[String(mg.id)] = mg.name;
+                return mg.name;
+            });
             setAllExercises(exercises);
             setMuscleGroups(groups);
             // Cache on success
@@ -576,6 +597,19 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null>(null);
     const [pendingOfflineLogs, setPendingOfflineLogs] = useState<number>(0);
 
+    // Limpiar estado de la sesión si se cierra sesión
+    useEffect(() => {
+        if (!currentUser) {
+            setActiveSessionDay(null);
+            setActivePlanId(null);
+            setSessionLogs({});
+            setCompletedSets({});
+            setComment('');
+            setSessionStartTime(null);
+            AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+        }
+    }, [currentUser]);
+
     // Initialize pendingOfflineLogs count
     useEffect(() => {
         const loadOfflineQueue = async () => {
@@ -607,6 +641,11 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                     const parsed = JSON.parse(stored);
                     
                     if (parsed.userId && parsed.userId !== currentUser.id) {
+                        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
+                        return;
+                    }
+
+                    if (!parsed.dayNumber || !parsed.planId) {
                         await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
                         return;
                     }

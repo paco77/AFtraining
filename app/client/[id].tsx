@@ -183,6 +183,7 @@ export default function ClientDetails() {
                     </View>
                     <Text style={styles.name}>{client.name}</Text>
                     <Text style={styles.username}>@{client.username}</Text>
+                    {client.phone && <Text style={{ color: '#aaa', fontSize: 13, marginTop: 4 }}>{client.phone}</Text>}
 
                     <View style={styles.badgeRow}>
                         <View style={styles.badge}>
@@ -237,7 +238,7 @@ export default function ClientDetails() {
                 {history && history.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Última Sesión de Entrenamiento</Text>
-                        <TouchableOpacity style={{ marginTop: 8 }} onPress={() => router.push({ pathname: '/client/history/[id]', params: { id: client.id } } as any)} activeOpacity={0.9}>
+                        <TouchableOpacity style={{ marginTop: 8 }} onPress={() => router.push({ pathname: '/client/history/[id]', params: { id: String(client.id) } } as any)} activeOpacity={0.9}>
                             <View style={{ overflow: 'hidden', backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }}>
                                 <View style={{ padding: Spacing.md }}>
                                     <View style={{ backgroundColor: Colors.textMuted + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 }}>
@@ -270,7 +271,7 @@ export default function ClientDetails() {
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
                         <Text style={[styles.sectionTitle, { marginTop: 0 }]}>Historial de Evaluaciones</Text>
-                        <TouchableOpacity onPress={() => router.push({ pathname: '/client/evaluations/[id]', params: { id: client.id } } as any)}>
+                        <TouchableOpacity onPress={() => router.push({ pathname: '/client/evaluations/[id]', params: { id: String(client.id) } } as any)}>
                             <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>Ver todas</Text>
                         </TouchableOpacity>
                     </View>
@@ -287,7 +288,7 @@ export default function ClientDetails() {
                                     activeOpacity={0.7}
                                     onPress={() => router.push({
                                         pathname: '/client/progress/detail',
-                                        params: { item: JSON.stringify(prog), clientId: client?.id }
+                                        params: { item: JSON.stringify(prog), clientId: String(client?.id || '') }
                                     })}
                                 >
                                     <View style={styles.historyDot} />
@@ -441,7 +442,7 @@ export default function ClientDetails() {
 
                                     <View style={{ flexDirection: 'row', gap: 12, marginRight: 8 }}>
                                         <TouchableOpacity
-                                            onPress={() => router.push({ pathname: '/client/nutrition/[id]', params: { id: client.id, planId: plan.id } } as any)}
+                                            onPress={() => router.push({ pathname: '/client/nutrition/[id]', params: { id: String(client.id), planId: String(plan.id) } } as any)}
                                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         >
                                             <Edit size={18} color={Colors.textMuted} />
@@ -507,7 +508,7 @@ export default function ClientDetails() {
                         activeOpacity={0.8}
                         onPress={() => router.push({
                             pathname: '/client/progress/[id]',
-                            params: { id: client.id }
+                            params: { id: String(client.id) }
                         })}
                     >
                         <Scale size={20} color={Colors.primary} />
@@ -519,7 +520,7 @@ export default function ClientDetails() {
                         activeOpacity={0.8}
                         onPress={() => router.push({
                             pathname: '/client/nutrition/[id]',
-                            params: { id: client.id }
+                            params: { id: String(client.id) }
                         })}
                     >
                         <CalendarDays size={20} color={Colors.primary} />
@@ -551,6 +552,12 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 50,
         left: 20,
+        zIndex: 10,
+    },
+    headerEdit: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
         zIndex: 10,
     },
     profileBox: {
@@ -926,22 +933,8 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: Colors.primary,
     },
-    headerBack: {
-        position: 'absolute',
-        left: Spacing.md,
-        zIndex: 10,
-        padding: 8,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 20,
-    },
-    headerEdit: {
-        position: 'absolute',
-        right: Spacing.md,
-        zIndex: 10,
-        padding: 8,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 20,
-    },
+
+
     cpDayChips: {
         flexDirection: 'row',
         flexWrap: 'wrap',

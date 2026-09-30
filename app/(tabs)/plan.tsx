@@ -55,7 +55,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Linking
 } from 'react-native';
 
 // ─── Wizard Steps ─────────────────────────────────────────────────────────────
@@ -1015,22 +1016,6 @@ const ExercisePicker = ({
     const available = useMemo(() => {
         let list = allExercises;
 
-        // Strictly filter by the muscle groups selected for this day in the previous step
-        if (muscleGroups && muscleGroups.length > 0) {
-            list = list.filter((e) => {
-                const hasPrimary = Array.isArray(e.primaryMuscles)
-                    ? e.primaryMuscles.some(m => muscleGroups.includes(m))
-                    : (typeof e.primaryMuscles === 'string' && muscleGroups.some(m => e.primaryMuscles.includes(m)));
-                return muscleGroups.includes(e.muscleGroup) || hasPrimary;
-            });
-        } else {
-            // If no muscle groups were selected for the day, show no exercises (or all? Usually they want it restricted)
-            // But to be safe, if they didn't select any, maybe they just want all.
-            // However, the user specifically requested: "no solo de los grupos musculares seleccionados", meaning it should strictly filter.
-            // If they selected none, maybe show none.
-            list = [];
-        }
-
         if (filterGroup !== 'Todos') {
             list = list.filter((e) => {
                 const hasPrimaryGroup = Array.isArray(e.primaryMuscles)
@@ -1040,7 +1025,7 @@ const ExercisePicker = ({
             });
         }
         return list;
-    }, [muscleGroups, filterGroup, allExercises]);
+    }, [filterGroup, allExercises]);
 
     const handleAddNew = async (ex: Exercise) => {
         const created = await onAddToLibrary(ex);
@@ -1445,37 +1430,75 @@ export default function PlanScreen() {
             };
         });
 
-        if (editingPlanId) {
-            // Edit mode: update existing plan
-            await updatePlan(editingPlanId, {
-                assignedClientId: assignedClientId || currentUser?.id || 'coach-1',
-                month: selectedMonth,
-                year: selectedYear,
-                daysPerWeek,
-                splitType,
-                days: processedDays,
-                notes: planNotes,
-                comment: planComment,
-            });
+        const executeSave = async (notifyWhatsApp: boolean) => {
+            try {
+                if (editingPlanId) {
+                    // Edit mode: update existing plan
+                    await updatePlan(editingPlanId, {
+                        assignedClientId: assignedClientId || currentUser?.id || 'coach-1',
+                        month: selectedMonth,
+                        year: selectedYear,
+                        daysPerWeek,
+                        splitType,
+                        days: processedDays,
+                        notes: planNotes,
+                        comment: planComment,
+                    });
+                } else {
+                    const newPlan: Omit<MonthlyPlan, 'id'> = {
+                        assignedClientId: assignedClientId || currentUser?.id || 'coach-1',
+                        month: selectedMonth,
+                        year: selectedYear,
+                        daysPerWeek,
+                        splitType,
+                        days: processedDays,
+                        notes: planNotes,
+                        comment: planComment,
+                    };
+                    await addPlan(newPlan);
+                }
+
+                if (notifyWhatsApp) {
+                    const client = clients.find(c => c.id === assignedClientId);
+                    const clientName = client ? client.name : 'Cliente';
+                    const message = editingPlanId 
+                        ? `¡Hola ${clientName}! Tu plan de entrenamiento ha sido actualizado. Revísalo en la AppAF.`
+                        : `¡Hola ${clientName}! Se ha creado un nuevo plan de entrenamiento para ti en la AppAF.`;
+                    const encodedMessage = encodeURIComponent(message);
+                    const url = (client && client.phone)
+                        ? `whatsapp://send?phone=${client.phone}&text=${encodedMessage}`
+                        : `whatsapp://send?text=${encodedMessage}`;
+
+                    Linking.openURL(url).catch(() => {
+                        Alert.alert('Error', 'No se pudo abrir WhatsApp');
+                    });
+                }
+
+                setShowWizard(false);
+                setStep(1);
+                setAssignedClientId(null);
+                setEditingPlanId(null);
+                setPlanNotes('');
+                setPlanComment('');
+            } catch (error) {
+                console.error("Error saving plan:", error);
+                Alert.alert("Error", "No se pudo guardar el plan");
+            }
+        };
+
+        if (isCoach && assignedClientId) {
+            Alert.alert(
+                editingPlanId ? 'Actualizar Plan' : 'Guardar Plan',
+                '¿Deseas avisar a este cliente por WhatsApp o simplemente guardar la información?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Solo guardar', onPress: () => executeSave(false) },
+                    { text: 'Avisar por WhatsApp', onPress: () => executeSave(true) }
+                ]
+            );
         } else {
-            const newPlan: Omit<MonthlyPlan, 'id'> = {
-                assignedClientId: assignedClientId || currentUser?.id || 'coach-1',
-                month: selectedMonth,
-                year: selectedYear,
-                daysPerWeek,
-                splitType,
-                days: processedDays,
-                notes: planNotes,
-                comment: planComment,
-            };
-            await addPlan(newPlan);
+            executeSave(false);
         }
-        setShowWizard(false);
-        setStep(1);
-        setAssignedClientId(null);
-        setEditingPlanId(null);
-        setPlanNotes('');
-        setPlanComment('');
     };
     const closeWizard = () => {
         setShowWizard(false);
@@ -1527,8 +1550,9 @@ export default function PlanScreen() {
         setTrainingDays((prev) => {
             const updated = [...prev];
             const day = { ...updated[dayIdx] };
-            if (day.muscleGroups.includes(group)) {
-                day.muscleGroups = day.muscleGroups.filter((g) => g !== group);
+            const exists = day.muscleGroups.some((g: string) => g.trim().toLowerCase() === group.trim().toLowerCase());
+            if (exists) {
+                day.muscleGroups = day.muscleGroups.filter((g: string) => g.trim().toLowerCase() !== group.trim().toLowerCase());
             } else {
                 day.muscleGroups = [...day.muscleGroups, group];
             }
@@ -1785,9 +1809,10 @@ export default function PlanScreen() {
             {trainingDays.map((day, idx) => (
                 <View key={day.dayNumber} style={styles.configDayCard}>
                     <Text style={styles.configDayTitle}>{day.label}</Text>
+                    {console.log(`DEBUG DAY ${day.dayNumber} MUSCLES:`, day.muscleGroups)}
                     <View style={styles.configMuscleGrid}>
                         {muscleGroups.map((g: string) => {
-                            const active = day.muscleGroups.includes(g);
+                            const active = day.muscleGroups.some((mg: string) => mg.trim().toLowerCase() === g.trim().toLowerCase());
                             const color = MuscleGroupColors[g] || Colors.primary;
                             return (
                                 <View key={g} style={{ flexDirection: 'column', alignItems: 'center', marginBottom: 8, marginHorizontal: 4 }}>
@@ -1881,7 +1906,14 @@ export default function PlanScreen() {
                                 });
                             }}
                         >
-                            <Text style={styles.exerciseDayTitle}>{day.label}</Text>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.exerciseDayTitle}>{day.label}</Text>
+                                {day.muscleGroups && day.muscleGroups.length > 0 && (
+                                    <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '600', marginTop: 2 }}>
+                                        {day.muscleGroups.join(' • ')}
+                                    </Text>
+                                )}
+                            </View>
                             {collapsedDays.has(day.dayNumber) ? <ChevronDown size={18} color={Colors.textMuted} /> : <ChevronUp size={18} color={Colors.textMuted} />}
                         </TouchableOpacity>
                         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1925,7 +1957,7 @@ export default function PlanScreen() {
                             {/* Quick Muscle Group Selector for this day */}
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -12, paddingHorizontal: 12, marginBottom: 12, marginTop: 4 }}>
                                 {muscleGroups.map((g: string) => {
-                                    const active = day.muscleGroups.includes(g);
+                                    const active = day.muscleGroups.some((mg: string) => mg.trim().toLowerCase() === g.trim().toLowerCase());
                                     const color = MuscleGroupColors[g] || Colors.primary;
                                     return (
                                         <TouchableOpacity

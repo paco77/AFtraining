@@ -32,6 +32,7 @@ const mapApiUserToFrontend = (apiUser: any): AppUser => {
         id: String(apiUser.id),
         username: apiUser.username,
         email: apiUser.email,
+        phone: apiUser.phone,
         role: apiUser.role as any,
         name: apiUser.name,
         trainingInfo: apiUser.training_info,

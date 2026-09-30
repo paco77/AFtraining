@@ -41,6 +41,7 @@ export default function EditClientScreen() {
     // Personal Data
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
     const [age, setAge] = useState('');
     const [weight, setWeight] = useState('');
     const [height, setHeight] = useState('');
@@ -76,6 +77,7 @@ export default function EditClientScreen() {
             if (isMounted) {
                 setName(client.name || '');
                 setEmail(client.email || '');
+                setPhone(client.phone || '');
                 setAge(client.age ? String(client.age) : '');
             }
             
@@ -92,6 +94,7 @@ export default function EditClientScreen() {
                     // Remove debug alert
                     setName(fullClient.name || '');
                     setEmail(fullClient.email || '');
+                    setPhone(fullClient.phone || '');
                     setAge(fullClient.age ? String(fullClient.age) : '');
                     setWeight(fullClient.weight ? String(fullClient.weight) : '');
                     setHeight(fullClient.height ? String(fullClient.height) : '');
@@ -217,6 +220,7 @@ export default function EditClientScreen() {
             formData.append('_method', 'PUT');
             formData.append('name', name);
             formData.append('email', email);
+            if (phone) formData.append('phone', phone);
             if (age) formData.append('age', age);
             if (weight) formData.append('weight', weight);
             if (height) formData.append('height', height);
@@ -400,6 +404,15 @@ export default function EditClientScreen() {
                         placeholderTextColor={Colors.textMuted}
                         value={email}
                         onChangeText={setEmail}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Teléfono Celular"
+                        keyboardType="phone-pad"
+                        placeholderTextColor={Colors.textMuted}
+                        value={phone}
+                        onChangeText={setPhone}
                     />
 
                     <View style={styles.row}>

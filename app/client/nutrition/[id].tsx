@@ -20,8 +20,10 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    Linking,
 } from 'react-native';
 import PieChart from 'react-native-pie-chart';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface FoodItem {
     id: string;
@@ -96,6 +98,7 @@ export default function NutritionCalculatorScreen() {
     const { clients } = useUser();
     const { plans, fetchPlans } = useNutrition();
     const [isSaving, setIsSaving] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const client = clients.find(c => String(c.id) === String(id));
 
@@ -524,48 +527,81 @@ export default function NutritionCalculatorScreen() {
     };
 
     const handleSavePlan = async () => {
-        setIsSaving(true);
-        try {
-            const planData = {
-                client_id: id === 'template' || !id ? null : (isNaN(Number(id)) ? id : Number(id)),
-                name: passedName ? String(passedName) : (client?.name ? `Plan Nutricional - ${client.name}` : undefined),
-                description: passedDesc ? String(passedDesc) : undefined,
-                gender,
-                weight: safeFloat(weight),
-                height: safeFloat(height),
-                age: safeInt(age),
-                activity_level: safeFloat(activityLevel, 1.2),
-                formula,
-                objective,
-                caloric_adjustment: safeFloat(caloricAdjustment),
-                tdee: safeFloat(tdee),
-                target_calories: safeFloat(targetCalories),
-                protein_per_kg: safeFloat(proteinPerKg),
-                lipids_per_kg: safeFloat(lipidsPerKg),
-                protein_grams: safeFloat(macros.proteinGrams),
-                lipid_grams: safeFloat(macros.lipidGrams),
-                carb_grams: safeFloat(macros.carbGrams),
-                notes: notes.trim(),
-                additional_comments: additionalComments.trim(),
-                meals_data: JSON.stringify(meals || []),
-                date: new Date().toISOString().split('T')[0]
-            };
+        const executeSave = async (notifyWhatsApp: boolean) => {
+            setIsSaving(true);
+            try {
+                const planData = {
+                    client_id: id === 'template' || !id ? null : (isNaN(Number(id)) ? id : Number(id)),
+                    name: passedName ? String(passedName) : (client?.name ? `Plan Nutricional - ${client.name}` : undefined),
+                    description: passedDesc ? String(passedDesc) : undefined,
+                    gender,
+                    weight: safeFloat(weight),
+                    height: safeFloat(height),
+                    age: safeInt(age),
+                    activity_level: safeFloat(activityLevel, 1.2),
+                    formula,
+                    objective,
+                    caloric_adjustment: safeFloat(caloricAdjustment),
+                    tdee: safeFloat(tdee),
+                    target_calories: safeFloat(targetCalories),
+                    protein_per_kg: safeFloat(proteinPerKg),
+                    lipids_per_kg: safeFloat(lipidsPerKg),
+                    protein_grams: safeFloat(macros.proteinGrams),
+                    lipid_grams: safeFloat(macros.lipidGrams),
+                    carb_grams: safeFloat(macros.carbGrams),
+                    notes: notes.trim(),
+                    additional_comments: additionalComments.trim(),
+                    meals_data: JSON.stringify(meals || []),
+                    date: new Date().toISOString().split('T')[0]
+                };
 
-            if (planId) {
-                await updateNutritionPlan(planId as string, planData);
-                showToast.success('Plan nutricional actualizado correctamente.');
-            } else {
-                await saveNutritionPlan(planData);
-                showToast.success('Plan nutricional guardado correctamente.');
+                if (planId) {
+                    await updateNutritionPlan(planId as string, planData);
+                    showToast.success('Plan nutricional actualizado correctamente.');
+                } else {
+                    await saveNutritionPlan(planData);
+                    showToast.success('Plan nutricional guardado correctamente.');
+                }
+                
+                if (notifyWhatsApp) {
+                    const clientName = client ? client.name : 'Cliente';
+                    const message = planId 
+                        ? `¡Hola ${clientName}! Tu plan de alimentación ha sido actualizado. Revísalo en la AppAF.`
+                        : `¡Hola ${clientName}! Se ha creado un nuevo plan de alimentación para ti en la AppAF.`;
+                    
+                    const encodedMessage = encodeURIComponent(message);
+                    const url = (client && client.phone)
+                        ? `whatsapp://send?phone=${client.phone}&text=${encodedMessage}`
+                        : `whatsapp://send?text=${encodedMessage}`;
+
+                    Linking.openURL(url).catch(() => {
+                        Alert.alert('Error', 'No se pudo abrir WhatsApp');
+                    });
+                }
+                
+                await fetchPlans();
+                router.back();
+            } catch (error: any) {
+                console.error('Error saving plan in screen:', error);
+                const serverMsg = error.response?.data?.message || error.response?.data?.error || (error.response?.data?.errors ? Object.values(error.response.data.errors).flat().join('\n') : null) || error.message;
+                Alert.alert('Error', serverMsg ? `Error al guardar: ${serverMsg}` : 'Hubo un error al guardar el plan en el servidor.');
+            } finally {
+                setIsSaving(false);
             }
-            await fetchPlans();
-            router.back();
-        } catch (error: any) {
-            console.error('Error saving plan in screen:', error);
-            const serverMsg = error.response?.data?.message || error.response?.data?.error || (error.response?.data?.errors ? Object.values(error.response.data.errors).flat().join('\n') : null) || error.message;
-            Alert.alert('Error', serverMsg ? `Error al guardar: ${serverMsg}` : 'Hubo un error al guardar el plan en el servidor.');
-        } finally {
-            setIsSaving(false);
+        };
+
+        if (id && id !== 'template') {
+            Alert.alert(
+                planId ? 'Actualizar Plan' : 'Guardar Plan',
+                '¿Deseas avisar a este cliente por WhatsApp o simplemente guardar la información?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Solo guardar', onPress: () => executeSave(false) },
+                    { text: 'Avisar por WhatsApp', onPress: () => executeSave(true) }
+                ]
+            );
+        } else {
+            executeSave(false);
         }
     };
 

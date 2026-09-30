@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Camera, Check, FileText, Plus, Scale, Trash, Activity } from 'lucide-react-native';
 import React, { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ActivityIndicator,
     Alert,
@@ -32,6 +33,7 @@ export default function ClientProgressScreen() {
         back: null as string | null,
     });
     const [isLoading, setIsLoading] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const handleAddMeasurement = () => {
         setDynamicMeasurements(prev => [...prev, { name: '', value: '' }]);

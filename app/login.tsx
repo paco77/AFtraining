@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
         opacity: 0.1, // So it blends with the deep steel blue
     },
     overlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...(StyleSheet.absoluteFill as any),
         backgroundColor: `${Colors.background}CC`, // 80% opacity overlay
     },
     keyboardView: {
