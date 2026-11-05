@@ -30,7 +30,7 @@ export default function RestTimerModal({ visible, onClose, initialSeconds = 90 }
     }, [visible, initialSeconds]);
 
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: any;
         if (isActive && timeLeft > 0) {
             interval = setInterval(() => {
                 setTimeLeft((prev) => prev - 1);

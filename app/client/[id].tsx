@@ -1,8 +1,11 @@
 import { Colors, Spacing } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
 import { usePlans } from '@/context/PlanContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import api from '@/services/api';
+import { formatDisplayDate, getSafeTimestamp } from '@/services/dateUtils';
+import { showToast } from '@/services/toast';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
     ArrowLeft,
@@ -38,14 +41,18 @@ import {
 export default function ClientDetails() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
-    const { clients, refreshProfile } = useUser();
+    const { colors, mode } = useTheme();
+    const { clients, refreshProfile, deleteClient } = useUser();
     const insets = useSafeAreaInsets();
-    const { plans, fetchHistory } = usePlans();
+    const { plans, fetchHistory, fetchPlans } = usePlans();
+    
+    const styles = useMemo(() => getStyles(colors, mode), [mode, colors]);
 
     const [history, setHistory] = useState<any[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
     const [expandedNutritionPlan, setExpandedNutritionPlan] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const client = useMemo(() => clients.find(c => c.id === id), [clients, id]);
 
@@ -54,7 +61,7 @@ export default function ClientDetails() {
         return plans.filter(p => String(p.assignedClientId) === String(client.id));
     }, [plans, client?.id]);
 
-    const { plans: nutritionPlans, deletePlan } = useNutrition();
+    const { plans: nutritionPlans, deletePlan, fetchPlans: fetchNutritionPlans } = useNutrition();
 
     const clientNutritionPlans = useMemo(() => {
         if (!client) return [];
@@ -83,10 +90,12 @@ export default function ClientDetails() {
                 let data = Array.isArray(response.data) ? response.data : response.data.data || [];
 
                 if (client && (client.weight || client.height)) {
+                    const initialDate = client?.created_at || (client as any)?.created_at;
                     data.push({
                         id: 'initial_bio',
                         weight: client.weight,
-                        created_at: client.created_at || new Date().toISOString(),
+                        recorded_at: initialDate,
+                        created_at: initialDate,
                         comments: 'Biometría Inicial',
                         measurements: {
                             Altura: client.height ? `${client.height} cm` : undefined,
@@ -96,8 +105,8 @@ export default function ClientDetails() {
                 }
 
                 data.sort((a: any, b: any) => {
-                    const dateA = new Date((a.recorded_at || a.created_at || '').replace(' ', 'T')).getTime();
-                    const dateB = new Date((b.recorded_at || b.created_at || '').replace(' ', 'T')).getTime();
+                    const dateA = getSafeTimestamp(a.recorded_at || a.created_at);
+                    const dateB = getSafeTimestamp(b.recorded_at || b.created_at);
                     return dateB - dateA;
                 });
 
@@ -144,6 +153,39 @@ export default function ClientDetails() {
         );
     };
 
+    const handleDeleteClient = () => {
+        if (!client) return;
+
+        showToast.confirm(
+            'Eliminar Cliente',
+            `¿Estás seguro de que deseas eliminar permanentemente a "${client.name}"? Se borrarán todos sus planes, nutrición, historial, fotos y cuenta de forma irreversible.`,
+            [
+                {
+                    text: 'Eliminar permanentemente',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setIsDeleting(true);
+                            await deleteClient(String(client.id));
+                            if (fetchPlans) fetchPlans().catch(() => {});
+                            if (fetchNutritionPlans) fetchNutritionPlans().catch(() => {});
+                            showToast.success('Cliente y todos sus datos eliminados correctamente');
+                            router.replace('/(tabs)');
+                        } catch (error: any) {
+                            setIsDeleting(false);
+                            const msg = error.response?.data?.message || 'Error al eliminar el cliente';
+                            showToast.error(msg);
+                        }
+                    }
+                },
+                {
+                    text: 'Cancelar',
+                    style: 'cancel'
+                }
+            ]
+        );
+    };
+
     if (!client) {
         return (
             <View style={styles.errorContainer}>
@@ -166,9 +208,18 @@ export default function ClientDetails() {
                     <ArrowLeft size={24} color="#fff" />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.headerEdit, { top: Math.max(insets.top, 20) + 12 }]} onPress={() => router.push(`/client/edit/${client.id}`)}>
-                    <Edit size={22} color="#fff" />
-                </TouchableOpacity>
+                <View style={[styles.headerActions, { top: Math.max(insets.top, 20) + 12 }]}>
+                    <TouchableOpacity style={styles.headerBtn} onPress={() => router.push(`/client/edit/${client.id}`)}>
+                        <Edit size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.headerBtn, styles.headerDeleteBtn]} onPress={handleDeleteClient} disabled={isDeleting}>
+                        {isDeleting ? (
+                            <ActivityIndicator size="small" color={colors.danger || '#ef4444'} />
+                        ) : (
+                            <Trash2 size={20} color={colors.danger || '#ef4444'} />
+                        )}
+                    </TouchableOpacity>
+                </View>
 
                 <View style={styles.profileBox}>
                     <View style={styles.avatarLarge}>
@@ -178,16 +229,16 @@ export default function ClientDetails() {
                                 style={styles.avatarImage}
                             />
                         ) : (
-                            <User size={48} color={Colors.primary} />
+                            <User size={48} color={colors.primary} />
                         )}
                     </View>
                     <Text style={styles.name}>{client.name}</Text>
                     <Text style={styles.username}>@{client.username}</Text>
-                    {client.phone && <Text style={{ color: '#aaa', fontSize: 13, marginTop: 4 }}>{client.phone}</Text>}
+                    {client.phone && <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>{client.phone}</Text>}
 
                     <View style={styles.badgeRow}>
                         <View style={styles.badge}>
-                            <Trophy size={14} color={Colors.primary} />
+                            <Trophy size={14} color={colors.primary} />
                             <Text style={styles.badgeText}>{client.trainingTime || 'Nuevo'}</Text>
                         </View>
                     </View>
@@ -204,17 +255,17 @@ export default function ClientDetails() {
                     <Text style={styles.sectionTitle}>Biometría Inicial</Text>
                     <View style={styles.statsGrid}>
                         <View style={styles.statCard}>
-                            <Scale size={20} color={Colors.primary} />
+                            <Scale size={20} color={colors.primary} />
                             <Text style={styles.statLabel}>Peso Inicial</Text>
                             <Text style={styles.statValue}>{client.weight || '--'} <Text style={styles.unit}>kg</Text></Text>
                         </View>
                         <View style={styles.statCard}>
-                            <Ruler size={20} color={Colors.primary} />
+                            <Ruler size={20} color={colors.primary} />
                             <Text style={styles.statLabel}>Altura</Text>
                             <Text style={styles.statValue}>{client.height || '--'} <Text style={styles.unit}>cm</Text></Text>
                         </View>
                         <View style={styles.statCard}>
-                            <Target size={20} color={Colors.primary} />
+                            <Target size={20} color={colors.primary} />
                             <Text style={styles.statLabel}>Edad</Text>
                             <Text style={styles.statValue}>{client.age || '--'} <Text style={styles.unit}>años</Text></Text>
                         </View>
@@ -226,7 +277,7 @@ export default function ClientDetails() {
                     <Text style={styles.sectionTitle}>Objetivos</Text>
                     <View style={styles.infoCard}>
                         <View style={styles.iconCircle}>
-                            <Target size={20} color={Colors.primary} />
+                            <Target size={20} color={colors.primary} />
                         </View>
                         <Text style={styles.infoText}>
                             {client.objectives || 'Sin objetivos definidos todavía.'}
@@ -239,23 +290,23 @@ export default function ClientDetails() {
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Última Sesión de Entrenamiento</Text>
                         <TouchableOpacity style={{ marginTop: 8 }} onPress={() => router.push({ pathname: '/client/history/[id]', params: { id: String(client.id) } } as any)} activeOpacity={0.9}>
-                            <View style={{ overflow: 'hidden', backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }}>
+                            <View style={{ overflow: 'hidden', backgroundColor: colors.surface, borderRadius: 16, borderColor: colors.border, borderWidth: 1 }}>
                                 <View style={{ padding: Spacing.md }}>
-                                    <View style={{ backgroundColor: Colors.textMuted + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 }}>
-                                        <Text style={{ color: Colors.textMuted, fontSize: 10, fontWeight: '800' }}>COMPLETADO</Text>
+                                    <View style={{ backgroundColor: colors.textMuted + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 }}>
+                                        <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '800' }}>COMPLETADO</Text>
                                     </View>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <View style={{ flex: 1 }}>
-                                            <Text style={{ color: Colors.text, fontSize: 18, fontWeight: '700' }}>
+                                            <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>
                                                 {new Date(history[0].date || history[0].created_at || Date.now()).toLocaleDateString()}
                                             </Text>
-                                            <Text style={{ color: Colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                                            <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
                                                 Ver historial completo de sesiones
                                             </Text>
                                         </View>
-                                        <View style={{ backgroundColor: Colors.surface_lowest, borderRadius: 24, padding: 4 }}>
-                                            <View style={{ backgroundColor: Colors.border, borderRadius: 20 }}>
-                                                <HistoryIcon size={24} color={Colors.textMuted} style={{ padding: 4 }} />
+                                        <View style={{ backgroundColor: colors.surfaceLight, borderRadius: 24, padding: 4 }}>
+                                            <View style={{ backgroundColor: colors.border, borderRadius: 20 }}>
+                                                <HistoryIcon size={24} color={colors.textMuted} style={{ padding: 4 }} />
                                             </View>
                                         </View>
                                     </View>
@@ -272,11 +323,11 @@ export default function ClientDetails() {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
                         <Text style={[styles.sectionTitle, { marginTop: 0 }]}>Historial de Evaluaciones</Text>
                         <TouchableOpacity onPress={() => router.push({ pathname: '/client/evaluations/[id]', params: { id: String(client.id) } } as any)}>
-                            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>Ver todas</Text>
+                            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 14 }}>Ver todas</Text>
                         </TouchableOpacity>
                     </View>
                     {loadingProgress ? (
-                        <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
+                        <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
                     ) : progressHistory.length > 0 ? (
                         <View style={styles.historyList}>
                             {progressHistory.slice(0, 1).map((prog, idx) => {
@@ -293,13 +344,9 @@ export default function ClientDetails() {
                                 >
                                     <View style={styles.historyDot} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.historyDate}>{
-                                            (() => {
-                                                const dStr = typeof (prog.created_at || prog.recorded_at) === 'string' ? (prog.created_at || prog.recorded_at).replace(' ', 'T') : null;
-                                                const d = dStr ? new Date(dStr) : new Date();
-                                                return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
-                                            })()
-                                        }</Text>
+                                        <Text style={styles.historyDate}>
+                                            {formatDisplayDate(prog.recorded_at || prog.created_at, prog.id === 'initial_bio' ? 'Registro Inicial' : 'Sin fecha')}
+                                        </Text>
                                         <Text style={styles.historyWeight}>Peso: {prog.weight ? `${prog.weight} kg` : '--'}</Text>
 
                                         {prog.measurements && Object.keys(prog.measurements).length > 0 && (
@@ -343,19 +390,19 @@ export default function ClientDetails() {
                                     activeOpacity={0.7}
                                 >
                                     <View style={styles.cpIconBg}>
-                                        <CalendarDays size={20} color={Colors.primary} />
+                                        <CalendarDays size={20} color={colors.primary} />
                                     </View>
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.cpTitle}>{plan.month} {plan.year}</Text>
                                         <Text style={styles.cpSub}>{plan.splitType} · {plan.daysPerWeek} días/sem</Text>
                                     </View>
                                     <View style={styles.cpStatRow}>
-                                        <Dumbbell size={12} color={Colors.primary} />
+                                        <Dumbbell size={12} color={colors.primary} />
                                         <Text style={styles.cpStatText}>{totalEx}</Text>
-                                        <Zap size={12} color={Colors.accent || Colors.primary} />
+                                        <Zap size={12} color={colors.accent || colors.primary} />
                                         <Text style={styles.cpStatText}>{totalSessions}</Text>
                                     </View>
-                                    {isExpanded ? <ChevronUp size={18} color={Colors.textMuted} /> : <ChevronDown size={18} color={Colors.textMuted} />}
+                                    {isExpanded ? <ChevronUp size={18} color={colors.textMuted} /> : <ChevronDown size={18} color={colors.textMuted} />}
                                 </TouchableOpacity>
 
                                 {isExpanded && (
@@ -398,7 +445,7 @@ export default function ClientDetails() {
                         );
                     }) : (
                         <View style={styles.cpEmpty}>
-                            <CalendarDays size={24} color={Colors.textMuted} />
+                            <CalendarDays size={24} color={colors.textMuted} />
                             <Text style={styles.cpEmptyText}>No hay planes asignados</Text>
                         </View>
                     )}
@@ -421,17 +468,17 @@ export default function ClientDetails() {
                             <View key={plan.id} style={styles.cpCard}>
                                 <TouchableOpacity
                                     style={styles.cpHeader}
-                                    onPress={() => setExpandedNutritionPlan(isExpanded ? null : plan.id)}
+                                    onPress={() => setExpandedNutritionPlan(isExpanded ? null : String(plan.id))}
                                     activeOpacity={0.7}
                                 >
                                     <View style={styles.cpIconBg}>
-                                        <CalendarDays size={20} color={Colors.primary} />
+                                        <CalendarDays size={20} color={colors.primary} />
                                     </View>
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.cpTitle}>Plan {dateText}</Text>
                                         <Text style={styles.cpSub}>{totalMeals} tiempos de comida</Text>
                                         {plan.tdee || plan.target_calories ? (
-                                            <Text style={[styles.cpSub, { color: Colors.text }]}>
+                                            <Text style={[styles.cpSub, { color: colors.text }]}>
                                                 Gasto cal total: {plan.tdee || '--'} kcal | Objetivo: {plan.target_calories || '--'} kcal
                                             </Text>
                                         ) : null}
@@ -445,17 +492,17 @@ export default function ClientDetails() {
                                             onPress={() => router.push({ pathname: '/client/nutrition/[id]', params: { id: String(client.id), planId: String(plan.id) } } as any)}
                                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         >
-                                            <Edit size={18} color={Colors.textMuted} />
+                                            <Edit size={18} color={colors.textMuted} />
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={() => handleDeleteNutritionPlan(plan.id)}
                                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         >
-                                            <Trash2 size={18} color={Colors.danger} />
+                                            <Trash2 size={18} color={colors.danger} />
                                         </TouchableOpacity>
                                     </View>
 
-                                    {isExpanded ? <ChevronUp size={20} color={Colors.textMuted} /> : <ChevronDown size={20} color={Colors.textMuted} />}
+                                    {isExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
                                 </TouchableOpacity>
 
                                 {isExpanded && (
@@ -496,7 +543,7 @@ export default function ClientDetails() {
                         );
                     }) : (
                         <View style={styles.cpEmpty}>
-                            <CalendarDays size={24} color={Colors.textMuted} />
+                            <CalendarDays size={24} color={colors.textMuted} />
                             <Text style={styles.cpEmptyText}>No hay planes de alimentación asignados</Text>
                         </View>
                     )}
@@ -511,7 +558,7 @@ export default function ClientDetails() {
                             params: { id: String(client.id) }
                         })}
                     >
-                        <Scale size={20} color={Colors.primary} />
+                        <Scale size={20} color={colors.primary} />
                         <Text style={styles.actionButtonText}>Registrar progreso manual</Text>
                     </TouchableOpacity>
 
@@ -523,8 +570,34 @@ export default function ClientDetails() {
                             params: { id: String(client.id) }
                         })}
                     >
-                        <CalendarDays size={20} color={Colors.primary} />
+                        <CalendarDays size={20} color={colors.primary} />
                         <Text style={styles.actionButtonText}>Asignar plan de alimentación</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Zona de peligro - Eliminar Cliente */}
+                <View style={styles.dangerCard}>
+                    <View style={styles.dangerHeader}>
+                        <Trash2 size={20} color={colors.danger || '#ef4444'} />
+                        <Text style={styles.dangerTitle}>Zona de peligro</Text>
+                    </View>
+                    <Text style={styles.dangerText}>
+                        Al eliminar a este cliente se borrarán de forma definitiva todos sus planes de entrenamiento, planes de nutrición, registros de progreso, fotos e historial completo. Esta acción no se puede deshacer.
+                    </Text>
+                    <TouchableOpacity
+                        style={[styles.deleteBtn, isDeleting && { opacity: 0.7 }]}
+                        activeOpacity={0.8}
+                        onPress={handleDeleteClient}
+                        disabled={isDeleting}
+                    >
+                        {isDeleting ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <>
+                                <Trash2 size={18} color="#fff" />
+                                <Text style={styles.deleteBtnText}>Eliminar Cliente y Todo su Historial</Text>
+                            </>
+                        )}
                     </TouchableOpacity>
                 </View>
 
@@ -534,7 +607,7 @@ export default function ClientDetails() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (Colors: any, mode?: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: Colors.background,
@@ -554,11 +627,64 @@ const styles = StyleSheet.create({
         left: 20,
         zIndex: 10,
     },
-    headerEdit: {
+    headerActions: {
         position: 'absolute',
         top: 50,
         right: 20,
         zIndex: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    headerBtn: {
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerDeleteBtn: {
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    },
+    dangerCard: {
+        backgroundColor: mode === 'dark' ? 'rgba(239, 68, 68, 0.08)' : '#fef2f2',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? 'rgba(239, 68, 68, 0.25)' : '#fecaca',
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 20,
+    },
+    dangerHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+    },
+    dangerTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: Colors.danger || '#ef4444',
+    },
+    dangerText: {
+        fontSize: 13,
+        lineHeight: 19,
+        color: Colors.textMuted,
+        marginBottom: 16,
+    },
+    deleteBtn: {
+        backgroundColor: Colors.danger || '#ef4444',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 14,
+        gap: 8,
+    },
+    deleteBtnText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 15,
     },
     profileBox: {
         alignItems: 'center',
@@ -567,12 +693,12 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 35,
-        backgroundColor: 'rgba(204, 255, 0, 0.1)',
+        backgroundColor: Colors.primary + '18',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 15,
         borderWidth: 1,
-        borderColor: 'rgba(204, 255, 0, 0.2)',
+        borderColor: Colors.primary + '30',
     },
     avatarImage: {
         width: '100%',
@@ -855,7 +981,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     backBtnText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontWeight: 'bold',
     },
     // ── Client Plan Cards ───────────────────────────
@@ -877,7 +1003,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 12,
-        backgroundColor: 'rgba(204, 255, 0, 0.1)',
+        backgroundColor: Colors.primary + '18',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -923,7 +1049,7 @@ const styles = StyleSheet.create({
         color: Colors.text,
     },
     cpSessBadge: {
-        backgroundColor: 'rgba(204, 255, 0, 0.12)',
+        backgroundColor: Colors.primary + '18',
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: 8,
@@ -941,7 +1067,7 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     cpDayChip: {
-        backgroundColor: 'rgba(204, 255, 0, 0.12)',
+        backgroundColor: Colors.primary + '18',
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: 8,
@@ -962,15 +1088,21 @@ const styles = StyleSheet.create({
     },
     cpExTextWhite: {
         fontSize: 13,
-        color: '#FFFFFF',
+        color: Colors.text,
         marginBottom: 4,
         fontWeight: '500',
     },
+    cpDayExercises: {
+        gap: 4,
+        marginTop: 4,
+    },
     planDetailsContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: Colors.surfaceLight,
         padding: 12,
         borderRadius: 12,
         marginBottom: 16,
+        borderWidth: 1,
+        borderColor: Colors.border,
     },
     planDetailsTitle: {
         fontSize: 14,

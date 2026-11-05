@@ -6,11 +6,46 @@ export interface FatSecretFood {
     food_url?: string;
 }
 
+export interface FoodCategory {
+    id: number | string;
+    name: string;
+    slug?: string;
+}
+
+export interface FoodPortion {
+    id: number | string;
+    portion_type: string;
+    portion_detail?: string | null;
+    base_quantity: number;
+    base_unit: string;
+    gram_weight?: number | null;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+}
+
+export interface CatalogFood {
+    key: string;
+    food_category_id: number | string;
+    category_name: string;
+    subcategory?: string;
+    name: string;
+    state?: string;
+    display_name?: string;
+    portions: FoodPortion[];
+}
+
+export interface FoodCatalogResponse {
+    categories: FoodCategory[];
+    foods: CatalogFood[];
+}
+
 export interface MealFood {
     id?: number | string;
     fatsecret_food_id: string | number;
     name: string;
-    serving_size: number;
+    serving_size: number | string;
     serving_unit: string;
     calories: number;
     protein: number;

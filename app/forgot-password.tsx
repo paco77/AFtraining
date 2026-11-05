@@ -1,10 +1,11 @@
-import { Colors, Fonts, Spacing, borderRadius } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
+import { useTheme } from '@/context/ThemeContext';
 import api from '@/services/api';
 import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, CheckCircle, Eye, EyeOff, Mail, Lock } from 'lucide-react-native';
-import React, { useState } from 'react';
+import { ArrowLeft, CheckCircle, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
@@ -27,10 +28,12 @@ type Step = 'form' | 'success';
 export default function ForgotPasswordScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [mode, colors]);
+
     const [step, setStep] = useState<Step>('form');
     const [isLoading, setIsLoading] = useState(false);
-    
+
     const [email, setEmail] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -79,11 +82,11 @@ export default function ForgotPasswordScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
                     showsVerticalScrollIndicator={false}
                 >
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.backBtn}
                         onPress={() => {
                             if (step === 'form' || step === 'success') router.back();
@@ -95,7 +98,7 @@ export default function ForgotPasswordScreen() {
                     {/* Header */}
                     <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                         <Image
-                            source={require('../assets/images/logo.png')}
+                            source={mode === 'light' ? require('../assets/images/logo-light.png') : require('../assets/images/logo.png')}
                             style={styles.logo}
                             resizeMode="contain"
                         />
@@ -116,11 +119,11 @@ export default function ForgotPasswordScreen() {
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.label}>CORREO ELECTRÓNICO</Text>
                                     <View style={styles.inputWrapper}>
-                                        <Mail size={20} color={Colors.textMuted} style={styles.inputIcon} />
+                                        <Mail size={20} color={colors.textMuted} style={styles.inputIcon} />
                                         <TextInput
                                             style={styles.input}
                                             placeholder="tu@email.com"
-                                            placeholderTextColor={Colors.textMuted}
+                                            placeholderTextColor={colors.textMuted}
                                             value={email}
                                             onChangeText={setEmail}
                                             keyboardType="email-address"
@@ -133,11 +136,11 @@ export default function ForgotPasswordScreen() {
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.label}>NUEVA CONTRASEÑA</Text>
                                     <View style={styles.inputWrapper}>
-                                        <Lock size={20} color={Colors.textMuted} style={styles.inputIcon} />
+                                        <Lock size={20} color={colors.textMuted} style={styles.inputIcon} />
                                         <TextInput
                                             style={styles.input}
                                             placeholder="••••••••"
-                                            placeholderTextColor={Colors.textMuted}
+                                            placeholderTextColor={colors.textMuted}
                                             value={newPassword}
                                             onChangeText={setNewPassword}
                                             secureTextEntry={!showPassword}
@@ -152,11 +155,11 @@ export default function ForgotPasswordScreen() {
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.label}>CONFIRMAR CONTRASEÑA</Text>
                                     <View style={styles.inputWrapper}>
-                                        <Lock size={20} color={Colors.textMuted} style={styles.inputIcon} />
+                                        <Lock size={20} color={colors.textMuted} style={styles.inputIcon} />
                                         <TextInput
                                             style={styles.input}
                                             placeholder="••••••••"
-                                            placeholderTextColor={Colors.textMuted}
+                                            placeholderTextColor={colors.textMuted}
                                             value={confirmPassword}
                                             onChangeText={setConfirmPassword}
                                             secureTextEntry={!showPassword}
@@ -169,7 +172,7 @@ export default function ForgotPasswordScreen() {
 
                         {step === 'success' && (
                             <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-                                <CheckCircle size={64} color={Colors.primary} />
+                                <CheckCircle size={64} color={colors.primary} />
                             </View>
                         )}
 
@@ -183,13 +186,13 @@ export default function ForgotPasswordScreen() {
                             style={styles.shadowCta}
                         >
                             <LinearGradient
-                                colors={[Colors.primary, Colors.tertiary]}
+                                colors={[colors.primary, colors.tertiary]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.loginBtn}
                             >
                                 {isLoading ? (
-                                    <ActivityIndicator color="#000" />
+                                    <ActivityIndicator color={colors.background} />
                                 ) : (
                                     <Text style={styles.loginBtnText}>
                                         {step === 'form' && 'CAMBIAR CONTRASEÑA'}
@@ -205,10 +208,10 @@ export default function ForgotPasswordScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     bgImage: {
         position: 'absolute',
@@ -218,8 +221,8 @@ const styles = StyleSheet.create({
         opacity: 0.1,
     },
     overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: `${Colors.background}CC`,
+        ...StyleSheet.absoluteFill,
+        backgroundColor: `${colors.background}CC`,
     },
     keyboardView: {
         flex: 1,
@@ -260,7 +263,7 @@ const styles = StyleSheet.create({
     subtitle: {
         fontFamily: Fonts.body,
         fontSize: 14,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         textAlign: 'center',
         marginTop: 8,
         lineHeight: 20,
@@ -281,7 +284,7 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.headline,
         fontSize: 11,
         fontWeight: '800',
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginBottom: 8,
         letterSpacing: 1,
         textTransform: 'uppercase',
@@ -310,7 +313,7 @@ const styles = StyleSheet.create({
         padding: 4,
     },
     shadowCta: {
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.3,
         shadowRadius: 16,

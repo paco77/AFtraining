@@ -1,6 +1,6 @@
 import { MonthlyPlan } from './PlanTypes';
 
-export type UserRole = 'coach' | 'client';
+export type UserRole = 'coach' | 'client' | 'independiente';
 
 export interface BaseUser {
     id: string;
@@ -10,7 +10,8 @@ export interface BaseUser {
     role: UserRole;
     name: string;
     trainingInfo?: string;
-    profilePhotoUrl?: string;
+    profilePhotoUrl?: string | null;
+    created_at?: string;
 }
 
 export interface Coach extends BaseUser {
@@ -35,11 +36,30 @@ export interface Client extends BaseUser {
         side: string | null;
         back: string | null;
     };
-    front_photo_url?: string;
-    side_photo_url?: string;
-    back_photo_url?: string;
+    front_photo_url?: string | null;
+    side_photo_url?: string | null;
+    back_photo_url?: string | null;
     initial_measurements?: string;
     plan?: MonthlyPlan;
 }
 
-export type AppUser = Coach | Client;
+export interface IndependentUser extends BaseUser {
+    role: 'independiente';
+    age?: number;
+    weight?: number;
+    height?: number;
+    trainingTime?: string;
+    objectives?: string;
+    photos?: {
+        front: string | null;
+        side: string | null;
+        back: string | null;
+    };
+    front_photo_url?: string | null;
+    side_photo_url?: string | null;
+    back_photo_url?: string | null;
+    initial_measurements?: string;
+    plan?: MonthlyPlan;
+}
+
+export type AppUser = Coach | Client | IndependentUser;

@@ -16,7 +16,7 @@ import {
     Square,
     Zap
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -54,7 +54,8 @@ const { width, height } = Dimensions.get('window');
 
 export default function CardioScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const {
         activities,
         isTracking,
@@ -254,14 +255,16 @@ export default function CardioScreen() {
                                     key={type}
                                     style={[
                                         styles.typeChip,
-                                        active ? { backgroundColor: '#CCFF00', borderColor: '#CCFF00' } : { backgroundColor: 'rgba(15, 23, 42, 0.85)', borderColor: '#334155' }
+                                        active
+                                            ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                                            : { backgroundColor: mode === 'dark' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.95)', borderColor: colors.border }
                                     ]}
                                     onPress={() => setSelectedType(type)}
                                 >
-                                    {type === 'Running' && <Footprints size={16} color={active ? '#000' : '#FFF'} />}
-                                    {type === 'Caminata' && <Activity size={16} color={active ? '#000' : '#FFF'} />}
-                                    {type === 'Ciclismo' && <Zap size={16} color={active ? '#000' : '#FFF'} />}
-                                    <Text style={[styles.typeChipText, { color: active ? '#000' : '#FFF' }]}>{type}</Text>
+                                    {type === 'Running' && <Footprints size={16} color={active ? (mode === 'dark' ? '#000' : '#FFF') : colors.text} />}
+                                    {type === 'Caminata' && <Activity size={16} color={active ? (mode === 'dark' ? '#000' : '#FFF') : colors.text} />}
+                                    {type === 'Ciclismo' && <Zap size={16} color={active ? (mode === 'dark' ? '#000' : '#FFF') : colors.text} />}
+                                    <Text style={[styles.typeChipText, { color: active ? (mode === 'dark' ? '#000' : '#FFF') : colors.text }]}>{type}</Text>
                                 </TouchableOpacity>
                             );
                         })}
@@ -300,20 +303,20 @@ export default function CardioScreen() {
                 <View style={styles.controlsRow}>
                     {!isTracking ? (
                         <TouchableOpacity
-                            style={[styles.mainActionBtn, { backgroundColor: '#CCFF00' }]}
+                            style={[styles.mainActionBtn, { backgroundColor: colors.primary }]}
                             onPress={handleStart}
                             activeOpacity={0.85}
                         >
-                            <Play size={24} color="#000" fill="#000" />
+                            <Play size={24} color={mode === 'dark' ? '#000' : '#FFF'} fill={mode === 'dark' ? '#000' : '#FFF'} />
                             <Text style={styles.mainActionText}>INICIAR RECORRIDO</Text>
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.trackingControlsGroup}>
                             <TouchableOpacity
-                                style={[styles.circleControlBtn, { backgroundColor: isPaused ? '#CCFF00' : '#F59E0B' }]}
+                                style={[styles.circleControlBtn, { backgroundColor: isPaused ? colors.primary : '#F59E0B' }]}
                                 onPress={isPaused ? resumeTracking : pauseTracking}
                             >
-                                {isPaused ? <Play size={22} color="#000" fill="#000" /> : <Pause size={22} color="#FFF" fill="#FFF" />}
+                                {isPaused ? <Play size={22} color={mode === 'dark' ? '#000' : '#FFF'} fill={mode === 'dark' ? '#000' : '#FFF'} /> : <Pause size={22} color="#FFF" fill="#FFF" />}
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -345,7 +348,7 @@ export default function CardioScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
     },
@@ -369,7 +372,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: 'rgba(204, 255, 0, 0.15)',
+        backgroundColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.15)' : 'rgba(29, 78, 216, 0.1)',
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: 10,
@@ -379,12 +382,12 @@ const styles = StyleSheet.create({
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: '#CCFF00',
+        backgroundColor: colors.primary,
     },
     bgBadgeText: {
         fontSize: 10,
         fontWeight: '700',
-        color: '#CCFF00',
+        color: colors.primary,
     },
     mapWrapper: {
         flex: 1,
@@ -403,7 +406,7 @@ const styles = StyleSheet.create({
     webMapOverlayInfo: {
         position: 'absolute',
         top: 16,
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        backgroundColor: mode === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)',
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: 20,
@@ -411,10 +414,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 8,
         borderWidth: 1,
-        borderColor: '#334155',
+        borderColor: colors.border,
     },
     webMapOverlayText: {
-        color: '#FFF',
+        color: colors.text,
         fontSize: 12,
         fontWeight: '600',
     },
@@ -487,12 +490,12 @@ const styles = StyleSheet.create({
     metricDivider: {
         width: 1,
         height: 36,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: colors.border,
     },
     metricLabel: {
         fontSize: 10,
         fontWeight: '800',
-        color: Colors.textMuted,
+        color: colors.textMuted,
         letterSpacing: 1,
         marginBottom: 4,
     },
@@ -504,7 +507,7 @@ const styles = StyleSheet.create({
     metricUnit: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#CCFF00',
+        color: colors.primary,
     },
     metricValueSec: {
         fontSize: 20,
@@ -522,7 +525,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
     },
     mainActionText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontSize: 16,
         fontWeight: '900',
         letterSpacing: 1,

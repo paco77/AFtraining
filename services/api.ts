@@ -74,6 +74,20 @@ api.interceptors.response.use(
     }
 );
 
+export const getFoodsCatalog = async (params?: { category_id?: string | number; query?: string }) => {
+    try {
+        const response = await api.get('/foods/search', { params });
+        return response.data;
+    } catch (error: any) {
+        if (error?.response?.status === 404) {
+            console.warn('[Foods Catalog] 404: /api/foods/search no está disponible en el servidor configurado (' + getBaseUrl() + '). Despliega aft-api o cambia getBaseUrl() a tu backend local.');
+        } else {
+            console.error('Error fetching foods catalog:', error);
+        }
+        throw error;
+    }
+};
+
 export const searchFatSecretFoods = async (query: string) => {
     try {
         const response = await api.get('/fatsecret/search', { params: { query } });
@@ -132,6 +146,63 @@ const safeNum = (v: any, fallback = 0): number => {
     return isNaN(n) || !isFinite(n) ? fallback : n;
 };
 
+const formatMealsForApi = (parsedMeals: any[]) => {
+    return (parsedMeals || []).map((meal: any, mealIdx: number) => {
+        if (!meal) return { name: `Comida ${mealIdx + 1}`, foods: [] };
+        const safeMealName = (meal.name && String(meal.name).trim())
+            ? String(meal.name).trim()
+            : `Comida ${mealIdx + 1}`;
+        return {
+            name: safeMealName,
+            foods: ((meal && meal.foods) || []).map((food: any) => {
+                if (!food) {
+                    return {
+                        fatsecret_food_id: `manual_${Date.now()}`,
+                        name: 'Alimento',
+                        serving_size: '1',
+                        serving_unit: 'g',
+                        calories: 0,
+                        protein: 0,
+                        carbs: 0,
+                        fat: 0,
+                    };
+                }
+                const rawFoodId = food.fatsecret_food_id || food.id;
+                const safeFoodId = rawFoodId
+                    ? String(rawFoodId)
+                    : `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+                const rawAmount = food.amountText !== undefined && food.amountText !== null
+                    ? String(food.amountText).trim()
+                    : (food.serving_size !== undefined && food.serving_size !== null
+                        ? String(food.serving_size).trim()
+                        : (food.servingSize ? String(food.servingSize).replace(/[^0-9./\s,-]/g, '').trim() : '1'));
+
+                const safeServingSize = rawAmount
+                    ? (rawAmount.includes('/') ? rawAmount : String(parseQuantity(rawAmount) || 1))
+                    : '1';
+
+                const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier)))
+                    ? 1
+                    : safeNum(food.amountMultiplier, 1);
+
+                const safeUnit = food.unit || food.serving_unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9./\s,-]/g, '').trim() : '') || 'g';
+
+                return {
+                    fatsecret_food_id: safeFoodId,
+                    name: food.name || 'Alimento',
+                    serving_size: safeServingSize,
+                    serving_unit: safeUnit,
+                    calories: Math.round(safeNum(food.calories) * multiplier * 100) / 100,
+                    protein: Math.round(safeNum(food.protein) * multiplier * 100) / 100,
+                    carbs: Math.round(safeNum(food.carbs) * multiplier * 100) / 100,
+                    fat: Math.round(safeNum(food.fat) * multiplier * 100) / 100,
+                };
+            })
+        };
+    });
+};
+
 export const saveNutritionPlan = async (rawData: any) => {
     try {
         let parsedMeals = [];
@@ -141,31 +212,7 @@ export const saveNutritionPlan = async (rawData: any) => {
             console.error('Failed to parse meals_data', e);
         }
 
-        const formattedMeals = (parsedMeals || []).map((meal: any) => {
-            if (!meal) return { name: 'Comida', foods: [] };
-            return {
-                name: meal.name || 'Comida',
-                foods: ((meal && meal.foods) || []).map((food: any) => {
-                    if (!food) return { fatsecret_food_id: null, name: 'Alimento', serving_size: '1', serving_unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 };
-                    const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
-                    const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
-                    const parsedServingSize = parseQuantity(rawAmount) || 1;
-                    const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : safeNum(food.amountMultiplier, 1);
-                    const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
-
-                    return {
-                        fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
-                        name: food.name || 'Alimento',
-                        serving_size: String(parsedServingSize),
-                        serving_unit: safeUnit,
-                        calories: safeNum(food.calories) * multiplier,
-                        protein: safeNum(food.protein) * multiplier,
-                        carbs: safeNum(food.carbs) * multiplier,
-                        fat: safeNum(food.fat) * multiplier,
-                    };
-                })
-            };
-        });
+        const formattedMeals = formatMealsForApi(parsedMeals);
 
         const totalCals = safeNum(rawData.target_calories) || safeNum(rawData.total_calories);
         const proteinGrams = safeNum(rawData.protein_grams) || safeNum(rawData.total_protein);
@@ -221,31 +268,7 @@ export const updateNutritionPlan = async (id: string | number, rawData: any) => 
             console.error('Failed to parse meals_data', e);
         }
 
-        const formattedMeals = (parsedMeals || []).map((meal: any) => {
-            if (!meal) return { name: 'Comida', foods: [] };
-            return {
-                name: meal.name || 'Comida',
-                foods: ((meal && meal.foods) || []).map((food: any) => {
-                    if (!food) return { fatsecret_food_id: null, name: 'Alimento', serving_size: '1', serving_unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 };
-                    const isNumericId = food.id && !isNaN(Number(food.id)) && !String(food.id).includes('manual') && !String(food.id).includes('fs_');
-                    const rawAmount = food.amountText !== undefined && food.amountText !== null ? String(food.amountText) : (food.servingSize ? String(food.servingSize) : '1');
-                    const parsedServingSize = parseQuantity(rawAmount) || 1;
-                    const multiplier = (food.amountMultiplier === undefined || isNaN(Number(food.amountMultiplier))) ? 1 : safeNum(food.amountMultiplier, 1);
-                    const safeUnit = food.unit || (typeof food.servingSize === 'string' ? food.servingSize.replace(/[0-9.]/g, '').trim() : '') || 'g';
-
-                    return {
-                        fatsecret_food_id: isNumericId ? Number(food.id) : (String(food.id || '').startsWith('manual') ? String(food.id) : null),
-                        name: food.name || 'Alimento',
-                        serving_size: String(parsedServingSize),
-                        serving_unit: safeUnit,
-                        calories: safeNum(food.calories) * multiplier,
-                        protein: safeNum(food.protein) * multiplier,
-                        carbs: safeNum(food.carbs) * multiplier,
-                        fat: safeNum(food.fat) * multiplier,
-                    };
-                })
-            };
-        });
+        const formattedMeals = formatMealsForApi(parsedMeals);
 
         const totalCals = safeNum(rawData.target_calories) || safeNum(rawData.total_calories);
         const proteinGrams = safeNum(rawData.protein_grams) || safeNum(rawData.total_protein);

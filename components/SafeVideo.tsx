@@ -6,11 +6,12 @@ interface SafeVideoProps {
   sourceUri: string;
   style?: ViewStyle;
   contentFit?: 'cover' | 'contain' | 'fill';
+  isLooping?: boolean;
 }
 
-export function SafeVideo({ sourceUri, style, contentFit = 'cover' }: SafeVideoProps) {
+export function SafeVideo({ sourceUri, style, contentFit = 'cover', isLooping = true }: SafeVideoProps) {
   const player = useVideoPlayer(sourceUri, (p) => {
-    p.loop = true;
+    p.loop = isLooping;
     p.muted = true;
     p.play();
   });

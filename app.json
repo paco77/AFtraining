@@ -43,11 +43,18 @@
       "expo-web-browser",
       "expo-video",
       "expo-image",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": false
+          }
+        }
+      ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "extra": {
       "router": {},

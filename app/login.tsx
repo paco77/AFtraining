@@ -1,12 +1,12 @@
-import { borderRadius, Colors, Fonts, Spacing } from '@/constants/theme';
+import { borderRadius, Fonts, Spacing } from '@/constants/theme';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import api from '@/services/api';
 import { showToast } from '@/services/toast';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, Eye, EyeOff } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
@@ -20,6 +20,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,11 +28,13 @@ export default function LoginScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { login, currentUser, isInitialized } = useUser();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [mode, colors]);
     const [loginId, setLoginId] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
+    const [rememberMe, setRememberMe] = useState(true);
 
     // Redirección automática si el usuario ya está autenticado e inicializado
     useEffect(() => {
@@ -44,11 +47,11 @@ export default function LoginScreen() {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <Image
-                    source={require('../assets/images/logo.png')}
+                    source={mode === 'light' ? require('../assets/images/logo-light.png') : require('../assets/images/logo.png')}
                     style={{ width: 260, height: 90 }}
                     resizeMode="contain"
                 />
-                <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 24 }} />
+                <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 24 }} />
             </View>
         );
     }
@@ -98,7 +101,7 @@ export default function LoginScreen() {
                     {/* Header: KINETIC */}
                     <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                         <Image
-                            source={require('../assets/images/logo.png')}
+                            source={mode === 'light' ? require('../assets/images/logo-light.png') : require('../assets/images/logo.png')}
                             style={{ width: 280, height: 100, marginBottom: -10 }}
                             resizeMode="contain"
                         />
@@ -168,7 +171,7 @@ export default function LoginScreen() {
                                 <Text style={styles.rememberText}>Recordarme </Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => router.push('/forgot-password')}
                                 activeOpacity={0.7}
                                 style={{ paddingVertical: 4, paddingHorizontal: 8 }}
@@ -185,13 +188,13 @@ export default function LoginScreen() {
                             style={styles.shadowCta}
                         >
                             <LinearGradient
-                                colors={[Colors.primary, Colors.tertiary]}
+                                colors={[colors.primary, colors.tertiary]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.loginBtn}
                             >
                                 {isLoading ? (
-                                    <ActivityIndicator color="#000" />
+                                    <ActivityIndicator color={colors.background} />
                                 ) : (
                                     <Text style={styles.loginBtnText}>COMENZAR</Text>
                                 )}
@@ -201,7 +204,7 @@ export default function LoginScreen() {
                         {/* Register link */}
                         <View style={styles.registerContainer}>
                             <Text style={styles.noAccountText}>¿No tienes una cuenta? </Text>
-                            <TouchableOpacity>
+                            <TouchableOpacity onPress={() => router.push('/register' as any)} activeOpacity={0.7}>
                                 <Text style={styles.registerText}>Crea una ahora</Text>
                             </TouchableOpacity>
                         </View>
@@ -232,10 +235,10 @@ export default function LoginScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     bgImage: {
         position: 'absolute',
@@ -246,7 +249,7 @@ const styles = StyleSheet.create({
     },
     overlay: {
         ...(StyleSheet.absoluteFill as any),
-        backgroundColor: `${Colors.background}CC`, // 80% opacity overlay
+        backgroundColor: `${colors.background}CC`, // 80% opacity overlay
     },
     keyboardView: {
         flex: 1,
@@ -265,18 +268,18 @@ const styles = StyleSheet.create({
     kineticTitle: {
         fontFamily: Fonts.display,
         fontSize: 36,
-        color: Colors.primary,
+        color: colors.primary,
         letterSpacing: 4,
     },
     kineticsubtitle: {
         fontFamily: Fonts.body,
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         letterSpacing: 2,
         marginTop: 4,
     },
     card: {
-        backgroundColor: Colors.surface, // No lines, tone layering
+        backgroundColor: colors.surface, // No lines, tone layering
         borderRadius: borderRadius.md,
         padding: Spacing.lg,
         paddingVertical: 32,
@@ -285,16 +288,16 @@ const styles = StyleSheet.create({
     welcomeTitle: {
         fontFamily: Fonts.headline,
         fontSize: 32,
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 8,
         lineHeight: 40,
     },
     welcomeHighlight: {
-        color: Colors.primary,
+        color: colors.primary,
     },
     instructionText: {
         fontFamily: Fonts.body,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         marginBottom: 32,
         lineHeight: 20,
@@ -304,16 +307,16 @@ const styles = StyleSheet.create({
     },
     label: {
         fontFamily: Fonts.label,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 11,
         marginBottom: 8,
         letterSpacing: 0.5,
     },
     input: {
         fontFamily: Fonts.body,
-        backgroundColor: Colors.surface_lowest,
+        backgroundColor: colors.surface_lowest,
         borderRadius: borderRadius.sm,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         paddingVertical: 14,
         paddingHorizontal: 16,
@@ -323,7 +326,7 @@ const styles = StyleSheet.create({
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surface_lowest,
+        backgroundColor: colors.surface_lowest,
         borderRadius: borderRadius.sm,
         borderBottomWidth: 2,
         borderBottomColor: 'transparent',
@@ -331,7 +334,7 @@ const styles = StyleSheet.create({
     passwordInput: {
         fontFamily: Fonts.body,
         flex: 1,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         paddingVertical: 14,
         paddingHorizontal: 16,
@@ -354,7 +357,7 @@ const styles = StyleSheet.create({
         width: 18,
         height: 18,
         borderWidth: 1.5,
-        borderColor: Colors.text,
+        borderColor: colors.text,
         borderRadius: 4,
         justifyContent: 'center',
         alignItems: 'center',
@@ -362,21 +365,21 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
     },
     checkboxActive: {
-        backgroundColor: Colors.text,
-        borderColor: Colors.text,
+        backgroundColor: colors.text,
+        borderColor: colors.text,
     },
     rememberText: {
         fontFamily: Fonts.body,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 13,
     },
     forgotText: {
         fontFamily: Fonts.body,
-        color: Colors.primary,
+        color: colors.primary,
         fontSize: 13,
     },
     shadowCta: {
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.4,
         shadowRadius: 32,
@@ -390,7 +393,7 @@ const styles = StyleSheet.create({
     },
     loginBtnText: {
         fontFamily: Fonts.display,
-        color: Colors.white,
+        color: colors.white,
         fontSize: 15,
         letterSpacing: 0.5,
     },
@@ -401,12 +404,12 @@ const styles = StyleSheet.create({
     },
     noAccountText: {
         fontFamily: Fonts.body,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 13,
     },
     registerText: {
         fontFamily: Fonts.bodyBold,
-        color: Colors.primary,
+        color: colors.primary,
         fontSize: 13,
     },
     watermarkContainer: {
@@ -417,7 +420,7 @@ const styles = StyleSheet.create({
     },
     watermark: {
         fontFamily: Fonts.display,
-        color: Colors.surface_low,
+        color: colors.surface_low,
         fontSize: 14,
         letterSpacing: 8,
     },
@@ -429,12 +432,12 @@ const styles = StyleSheet.create({
     watermarkLine1: {
         width: 120,
         height: 1,
-        backgroundColor: Colors.surface_low,
+        backgroundColor: colors.surface_low,
     },
     watermarkLine2: {
         width: 60,
         height: 1,
-        backgroundColor: Colors.surface_low,
+        backgroundColor: colors.surface_low,
     },
     footer: {
         marginTop: 60,
@@ -448,13 +451,13 @@ const styles = StyleSheet.create({
     },
     footerLink: {
         fontFamily: Fonts.label,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 11,
         letterSpacing: 1,
     },
     copyright: {
         fontFamily: Fonts.body,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 10,
         letterSpacing: 0.5,
     },

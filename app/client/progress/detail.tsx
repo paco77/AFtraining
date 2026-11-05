@@ -1,6 +1,8 @@
 import { Colors, Spacing } from '@/constants/theme';
 import { showToast } from '@/services/toast';
 import api from '@/services/api';
+import { formatDisplayDate } from '@/services/dateUtils';
+import { useUser } from '@/context/UserContext';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Edit, Trash2, Calendar, Scale, Ruler, Activity, MessageSquare } from 'lucide-react-native';
 import React, { useState, useRef } from 'react';
@@ -24,6 +26,8 @@ export default function ProgressDetailScreen() {
     const { item, clientId } = useLocalSearchParams();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { currentUser } = useUser();
+    const canEdit = currentUser?.role !== 'client' && (currentUser?.role === 'coach' || currentUser?.role === 'independiente');
     const [isDeleting, setIsDeleting] = useState(false);
 
     let progress: any = {};
@@ -69,7 +73,17 @@ export default function ProgressDetailScreen() {
 
     const handleEdit = () => {
         if (!progress.id || progress.id === 'initial_bio') {
-            Alert.alert('No permitido', 'Este registro no se puede editar desde aquí.');
+            Alert.alert(
+                'Datos Iniciales del Cliente',
+                'Esta evaluación corresponde a los datos iniciales registrados en el perfil del cliente. ¿Deseas editarlos desde su perfil?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Editar Perfil',
+                        onPress: () => router.push({ pathname: '/client/edit/[id]', params: { id: String(clientId) } })
+                    }
+                ]
+            );
             return;
         }
         router.push({
@@ -104,7 +118,7 @@ export default function ProgressDetailScreen() {
                     <ArrowLeft size={24} color={Colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Detalle de Progreso</Text>
-                {progress.id && progress.id !== 'initial_bio' ? (
+                {canEdit && progress.id && progress.id !== 'initial_bio' ? (
                     <TouchableOpacity onPress={handleEdit} style={styles.editBtn}>
                         <Edit size={20} color={Colors.primary} />
                     </TouchableOpacity>
@@ -154,7 +168,7 @@ export default function ProgressDetailScreen() {
                         <View style={{ flex: 1, marginLeft: 12 }}>
                             <Text style={styles.detailLabel}>Fecha</Text>
                             <Text style={styles.detailValue}>
-                                {new Date(progress.recorded_at || progress.created_at || Date.now()).toLocaleDateString()}
+                                {formatDisplayDate(progress.recorded_at || progress.created_at, progress.id === 'initial_bio' ? 'Registro Inicial' : 'Sin fecha')}
                             </Text>
                         </View>
                     </View>
@@ -206,7 +220,7 @@ export default function ProgressDetailScreen() {
                     )}
                 </View>
 
-                {progress.id && progress.id !== 'initial_bio' && (
+                {canEdit && progress.id && progress.id !== 'initial_bio' && (
                     <TouchableOpacity
                         style={[styles.deleteBtn, isDeleting && { opacity: 0.7 }]}
                         activeOpacity={0.8}

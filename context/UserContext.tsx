@@ -11,8 +11,9 @@ interface UserContextType {
     isInitialized: boolean;
     login: (user: AppUser, token: string, rememberMe?: boolean) => Promise<void>;
     addClient: (client: Client, photos?: { profile: string | null; front: string | null; side: string | null; back: string | null }) => void;
+    deleteClient: (clientId: string) => Promise<void>;
     updateProfilePhoto: (uri: string) => Promise<AppUser>;
-    updateProfile: (data: Partial<AppUser>) => Promise<AppUser>;
+    updateProfile: (data: Partial<AppUser> & { experienceYears?: number; formation?: string; weight?: number; height?: number; age?: number; objectives?: string; trainingTime?: string; phone?: string; measurements?: Record<string, string> | any }) => Promise<AppUser>;
     logout: () => void;
     refreshProfile: () => Promise<void>;
 }
@@ -37,6 +38,7 @@ const mapApiUserToFrontend = (apiUser: any): AppUser => {
         name: apiUser.name,
         trainingInfo: apiUser.training_info,
         profilePhotoUrl: formatGlobalUrl(apiUser.profile_photo_url || apiUser.profile_photo_path),
+        created_at: apiUser.created_at,
     };
 
     if (apiUser.role === 'client') {
@@ -50,6 +52,23 @@ const mapApiUserToFrontend = (apiUser: any): AppUser => {
             height: apiUser.height,
             trainingTime: apiUser.training_time,
             objectives: apiUser.objectives,
+            front_photo_url: formatGlobalUrl(apiUser.front_photo_url || apiUser.front_photo_path || apiUser.front_photo),
+            side_photo_url: formatGlobalUrl(apiUser.side_photo_url || apiUser.side_photo_path || apiUser.side_photo),
+            back_photo_url: formatGlobalUrl(apiUser.back_photo_url || apiUser.back_photo_path || apiUser.back_photo),
+            initial_measurements: apiUser.initial_measurements || apiUser.measurements,
+        };
+    }
+
+    if (apiUser.role === 'independiente') {
+        return {
+            ...base,
+            role: 'independiente',
+            age: apiUser.age,
+            weight: apiUser.weight,
+            height: apiUser.height,
+            trainingTime: apiUser.training_time,
+            objectives: apiUser.objectives,
+            trainingInfo: apiUser.training_info,
             front_photo_url: formatGlobalUrl(apiUser.front_photo_url || apiUser.front_photo_path || apiUser.front_photo),
             side_photo_url: formatGlobalUrl(apiUser.side_photo_url || apiUser.side_photo_path || apiUser.side_photo),
             back_photo_url: formatGlobalUrl(apiUser.back_photo_url || apiUser.back_photo_path || apiUser.back_photo),
@@ -118,20 +137,16 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             try {
                 const token = await Storage.getItem('auth_token');
                 const savedUser = await Storage.getItem('user_data');
-                const rememberMe = await Storage.getItem('remember_me');
 
-                if (rememberMe === 'true' && savedUser) {
-                    setCurrentUser(JSON.parse(savedUser));
-                } else if (rememberMe !== 'true') {
-                    // Si no se eligió recordar, limpiamos para este nuevo inicio
-                    await Storage.deleteItem('auth_token');
-                    await Storage.deleteItem('user_data');
-                    setCurrentUser(null);
-                }
+                if (token && savedUser) {
+                    try {
+                        const parsed = JSON.parse(savedUser);
+                        setCurrentUser(parsed);
+                    } catch (parseError) {
+                        console.error('Error parsing savedUser:', parseError);
+                    }
 
-                if (rememberMe === 'true' && token) {
-                    // No bloqueamos la inicialización con el fetchProfile.
-                    // Lo ejecutamos de fondo para validar y actualizar el perfil.
+                    // Validar y refrescar perfil en segundo plano sin bloquear la inicialización
                     fetchProfile().catch(err => {
                         console.error('Background fetchProfile error:', err);
                     });
@@ -141,7 +156,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             } finally {
                 setIsInitialized(true);
             }
-        }
+        };
         checkAuth();
     }, [fetchProfile]);
 
@@ -183,6 +198,16 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
+    const deleteClient = useCallback(async (clientId: string) => {
+        try {
+            await api.delete(`clients/${clientId}`);
+            setClients((prev) => prev.filter((c) => String(c.id) !== String(clientId)));
+        } catch (error: any) {
+            console.error('Error deleting client:', error.response?.data || error.message);
+            throw error;
+        }
+    }, []);
+
     const updateProfilePhoto = async (uri: string) => {
         try {
             const formData = new FormData();
@@ -219,13 +244,21 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const updateProfile = async (data: Partial<AppUser>) => {
+    const updateProfile = async (data: Partial<AppUser> & { experienceYears?: number; formation?: string; weight?: number; height?: number; age?: number; objectives?: string; trainingTime?: string; phone?: string; measurements?: Record<string, string> | any }) => {
         try {
-            const payload = {
+            const payload: any = {
                 name: data.name,
-                experience_years: data.experienceYears,
-                training_info: data.formation || data.trainingInfo // Para Coach se guarda su formación en training_info
+                experience_years: (data as any).experienceYears,
+                training_info: (data as any).formation || (data as any).trainingInfo
             };
+            if (data.phone !== undefined) payload.phone = data.phone;
+            if (data.weight !== undefined) payload.weight = data.weight;
+            if (data.height !== undefined) payload.height = data.height;
+            if (data.age !== undefined) payload.age = data.age;
+            if (data.objectives !== undefined) payload.objectives = data.objectives;
+            if (data.trainingTime !== undefined) payload.training_time = data.trainingTime;
+            if (data.measurements !== undefined) payload.measurements = data.measurements;
+
             const response = await api.put('profile', payload);
             const updatedUser = mapApiUserToFrontend(response.data.data);
             setCurrentUser(updatedUser);
@@ -241,11 +274,13 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         await Storage.deleteItem('auth_token');
         await Storage.deleteItem('user_data');
         await Storage.deleteItem('remember_me');
+        await Storage.deleteItem('active_workout_session');
+        await Storage.deleteItem('@af_cache_active_workout_session');
         setCurrentUser(null);
     };
 
     return (
-        <UserContext.Provider value={{ currentUser, clients, isInitialized, login, addClient, updateProfilePhoto, updateProfile, logout, refreshProfile: fetchProfile }}>
+        <UserContext.Provider value={{ currentUser, clients, isInitialized, login, addClient, deleteClient, updateProfilePhoto, updateProfile, logout, refreshProfile: fetchProfile }}>
             {children}
         </UserContext.Provider>
     );

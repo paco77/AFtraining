@@ -1,6 +1,7 @@
 import { MealFood, NutritionPlan, NutritionPlanMeal, FatSecretFood } from '@/constants/NutritionTypes';
-import { Colors, Spacing, borderRadius } from '@/constants/theme';
+import { Spacing, borderRadius } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { showToast } from '@/services/toast';
 import {
@@ -38,6 +39,8 @@ export default function NutritionScreen() {
     const router = useRouter();
     const { filter } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
 
     const [refreshing, setRefreshing] = useState(false);
     const [expandedNutritionPlan, setExpandedNutritionPlan] = useState<string | number | null>(null);
@@ -50,6 +53,8 @@ export default function NutritionScreen() {
     }, [filter]);
 
     const isCoach = currentUser?.role === 'coach';
+    const isIndependent = currentUser?.role === 'independiente';
+    const canManageNutrition = isCoach || isIndependent;
 
     const filteredPlans = useMemo(() => {
         if (!currentUser) return [];
@@ -62,8 +67,11 @@ export default function NutritionScreen() {
             }
             return plans;
         }
+        if (isIndependent) {
+            return plans.filter(p => String(p.client_id) === String(currentUser.id) || String(p.coach_id) === String(currentUser.id));
+        }
         return plans.filter(p => String(p.client_id) === String(currentUser.id));
-    }, [plans, currentUser, isCoach, coachFilter]);
+    }, [plans, currentUser, isCoach, isIndependent, coachFilter]);
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -107,13 +115,13 @@ export default function NutritionScreen() {
             {filteredPlans.length === 0 ? (
                 <ScrollView contentContainerStyle={[styles.emptyState, { paddingBottom: Math.max(insets.bottom, 24) + 60 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
                     <View style={styles.emptyIconContainer}>
-                        <Apple size={36} color={Colors.textMuted} />
+                        <Apple size={36} color={colors.textMuted} />
                     </View>
                     <Text style={styles.emptyText}>Sin dietas todavía</Text>
                     <Text style={styles.emptySubtext}>Crea o asigna el primer plan de nutrición</Text>
-                    {isCoach && (
+                    {canManageNutrition && (
                         <TouchableOpacity style={styles.emptyCta} onPress={handleCreatePlan}>
-                            <Plus size={16} color="#000" />
+                            <Plus size={16} color={colors.on_primary || '#fff'} />
                             <Text style={styles.emptyCtaText}>Crear Dieta</Text>
                         </TouchableOpacity>
                     )}
@@ -123,7 +131,7 @@ export default function NutritionScreen() {
                     data={filteredPlans}
                     keyExtractor={(item) => item.id.toString()}
                     contentContainerStyle={[styles.plansList, { paddingBottom: Math.max(insets.bottom, 24) + 80 }]}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
                     renderItem={({ item }) => {
                         const isExpanded = expandedNutritionPlan === item.id;
                         return (
@@ -134,9 +142,9 @@ export default function NutritionScreen() {
                                 >
                                     <View style={styles.planHeader}>
                                         <Text style={styles.planTitle}>{item.name}</Text>
-                                        {isCoach && (
+                                        {canManageNutrition && (
                                             <TouchableOpacity onPress={() => deletePlan(item.id)}>
-                                                <Trash2 size={18} color={Colors.danger} />
+                                                <Trash2 size={18} color={colors.danger} />
                                             </TouchableOpacity>
                                         )}
                                     </View>
@@ -154,7 +162,7 @@ export default function NutritionScreen() {
                                 </TouchableOpacity>
 
                                 {isExpanded && (
-                                    <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 16 }}>
+                                    <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
                                         {(item.gender || item.weight || item.objective) && (
                                             <View style={styles.planDetailsContainer}>
                                                 <Text style={styles.planDetailsTitle}>Detalles del Cálculo:</Text>
@@ -173,11 +181,11 @@ export default function NutritionScreen() {
 
                                         {item.meals?.map((meal: any, index: number) => (
                                             <View key={meal.id || index} style={{ marginBottom: 12 }}>
-                                                <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 8 }}>{meal.name}</Text>
+                                                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 8 }}>{meal.name}</Text>
                                                 {meal.foods && meal.foods.length > 0 && (
                                                     <View style={{ paddingLeft: 8 }}>
                                                         {meal.foods.map((food: any, idx: number) => (
-                                                            <Text key={food.id || idx} style={{ fontSize: 13, color: '#FFFFFF', marginBottom: 4, fontWeight: '500' }}>
+                                                            <Text key={food.id || idx} style={{ fontSize: 13, color: colors.text, marginBottom: 4, fontWeight: '500' }}>
                                                                 {idx + 1}. {food.name} · {food.serving_size} {food.serving_unit}
                                                             </Text>
                                                         ))}
@@ -187,18 +195,18 @@ export default function NutritionScreen() {
                                         ))}
 
                                         {(item.notes || (item.description && !item.description.startsWith('Objetivo:'))) && (
-                                            <View style={{ marginTop: 12, backgroundColor: Colors.surfaceLight, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border }}>
-                                                <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary, marginBottom: 4 }}>Comentarios e Indicaciones:</Text>
-                                                <Text style={{ fontSize: 13, color: Colors.text, lineHeight: 18 }}>
+                                            <View style={{ marginTop: 12, backgroundColor: mode === 'dark' ? colors.surface_lowest || '#000000' : '#EDF2F7', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+                                                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary, marginBottom: 4 }}>Comentarios e Indicaciones:</Text>
+                                                <Text style={{ fontSize: 13, color: colors.text, lineHeight: 18 }}>
                                                     {item.notes || item.description?.split('Objetivo:')[0].trim()}
                                                 </Text>
                                             </View>
                                         )}
 
                                         {item.additional_comments ? (
-                                            <View style={{ marginTop: 12, backgroundColor: Colors.surfaceLight, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border }}>
-                                                <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary, marginBottom: 4 }}>Comentarios Adicionales:</Text>
-                                                <Text style={{ fontSize: 13, color: Colors.text, lineHeight: 18 }}>
+                                            <View style={{ marginTop: 12, backgroundColor: mode === 'dark' ? colors.surface_lowest || '#000000' : '#EDF2F7', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+                                                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary, marginBottom: 4 }}>Comentarios Adicionales:</Text>
+                                                <Text style={{ fontSize: 13, color: colors.text, lineHeight: 18 }}>
                                                     {item.additional_comments}
                                                 </Text>
                                             </View>
@@ -211,9 +219,9 @@ export default function NutritionScreen() {
                 />
             )}
 
-            {isCoach && (
+            {canManageNutrition && (
                 <TouchableOpacity style={[styles.fab, { bottom: Math.max(insets.bottom, 24) + 16 }]} onPress={handleCreatePlan}>
-                    <Plus size={24} color="#000" />
+                    <Plus size={24} color={colors.on_primary || '#fff'} />
                 </TouchableOpacity>
             )}
 
@@ -222,32 +230,32 @@ export default function NutritionScreen() {
 }
 
 // ─── Styles ───
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.background },
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
 
     // Empty State
     emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
-    emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.cardBg, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-    emptyText: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-    emptySubtext: { color: Colors.textMuted, fontSize: 14, marginTop: 6, marginBottom: Spacing.lg },
-    emptyCta: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: borderRadius.lg },
-    emptyCtaText: { color: '#000', fontSize: 18, fontWeight: '700' },
+    emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.md, borderWidth: 1, borderColor: colors.border },
+    emptyText: { color: colors.text, fontSize: 18, fontWeight: '700' },
+    emptySubtext: { color: colors.textMuted, fontSize: 14, marginTop: 6, marginBottom: Spacing.lg },
+    emptyCta: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: borderRadius.lg },
+    emptyCtaText: { color: colors.on_primary || '#fff', fontSize: 18, fontWeight: '700' },
 
     // Plan Card
     plansList: { padding: Spacing.md, paddingBottom: 100 },
-    planCard: { backgroundColor: Colors.cardBg, borderRadius: borderRadius.lg, padding: Spacing.md, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
+    planCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: Spacing.md, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
     planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-    planTitle: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-    planMacros: { color: Colors.textMuted, fontSize: 14, marginBottom: 12 },
-    planMeals: { gap: 6, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
+    planTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+    planMacros: { color: colors.textMuted, fontSize: 14, marginBottom: 12 },
+    planMeals: { gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 },
     planMealRow: { flexDirection: 'row', justifyContent: 'space-between' },
-    planMealTitle: { color: Colors.text, fontSize: 14, fontWeight: '600' },
-    planMealFoods: { color: Colors.primary, fontSize: 12 },
+    planMealTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+    planMealFoods: { color: colors.primary, fontSize: 12 },
 
-    fab: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
+    fab: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
 
     planDetailsContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
         padding: 12,
         borderRadius: 12,
         marginBottom: 16,
@@ -255,7 +263,7 @@ const styles = StyleSheet.create({
     planDetailsTitle: {
         fontSize: 14,
         fontWeight: '700',
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 8,
     },
     planDetailsGrid: {
@@ -265,7 +273,7 @@ const styles = StyleSheet.create({
     },
     planDetailText: {
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         width: '48%',
     },
 
@@ -273,21 +281,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     clientChipActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     clientChipText: {
         fontSize: 13,
         fontWeight: '600',
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     clientChipTextActive: {
-        color: '#000',
+        color: colors.on_primary || '#fff',
         fontWeight: '700',
     },
 });

@@ -1,3 +1,4 @@
+import 'react-native-reanimated';
 import { PlanProvider } from '@/context/PlanContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { UserProvider } from '@/context/UserContext';
@@ -7,7 +8,6 @@ import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from '@rea
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import 'react-native-reanimated';
 import { Toaster } from 'sonner-native';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
@@ -18,7 +18,9 @@ import { Manrope_400Regular, Manrope_500Medium, Manrope_700Bold } from '@expo-go
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { View } from 'react-native';
 
-SplashScreen.preventAutoHideAsync();
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -33,7 +35,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
 
@@ -42,30 +44,34 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <UserProvider>
-          <PlanProvider>
-            <NutritionProvider>
-              <OutdoorActivityProvider>
-                <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                  <View style={{ flex: 1, paddingBottom: 24, backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }}>
-                    <Stack initialRouteName="login">
-                      <Stack.Screen name="login" options={{ headerShown: false }} />
-                      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                    </Stack>
-                  </View>
-                  <StatusBar style="light" />
-                  <Toaster />
-                </NavThemeProvider>
-              </OutdoorActivityProvider>
-            </NutritionProvider>
-          </PlanProvider>
-        </UserProvider>
-      </ThemeProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider>
+          <UserProvider>
+            <PlanProvider>
+              <NutritionProvider>
+                <OutdoorActivityProvider>
+                  <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                    <View style={{ flex: 1, paddingBottom: 24, backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }}>
+                      <Stack>
+                        <Stack.Screen name="index" options={{ headerShown: false }} />
+                        <Stack.Screen name="login" options={{ headerShown: false }} />
+                        <Stack.Screen name="register" options={{ headerShown: false }} />
+                        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+                        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                      </Stack>
+                    </View>
+                    <StatusBar style="light" />
+                    <Toaster />
+                  </NavThemeProvider>
+                </OutdoorActivityProvider>
+              </NutritionProvider>
+            </PlanProvider>
+          </UserProvider>
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 

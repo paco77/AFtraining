@@ -1,6 +1,12 @@
 import {
     Exercise,
-    MuscleGroup
+    ExercisePriority,
+    ExercisePriorityInfo,
+    getExercisePriority,
+    inferMuscleGroupFromName,
+    isSameMuscleGroup,
+    MuscleGroup,
+    sanitizeExerciseGroup
 } from '@/constants/ExerciseData';
 import {
     DayLog,
@@ -16,20 +22,29 @@ import {
 } from '@/constants/PlanTypes';
 import { borderRadius, Colors, MuscleGroupColors, Spacing, Typography } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { API_HOST } from '@/services/api';
 import { showToast } from '@/services/toast';
+import { formatToLocalISO } from '@/services/dateUtils';
+import { isExternalVideoLink, isValidWebUrl, normalizeVideoLink } from '@/services/videoLinks';
 import { SafeVideo } from '@/components/SafeVideo';
+import { ExternalVideoCard } from '@/components/ExternalVideoCard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
     ArrowLeft,
     ArrowRight,
+    ArrowUpDown,
     CalendarDays,
     Check,
     ChevronDown,
     ChevronUp,
+    ChevronsUp,
+    Copy,
     Info,
+    Layers,
+    Link2,
     Mic,
     Minus,
     Pencil,
@@ -51,6 +66,7 @@ import {
     Platform,
     RefreshControl,
     ScrollView,
+    SectionList,
     StyleSheet,
     Text,
     TextInput,
@@ -58,6 +74,8 @@ import {
     View,
     Linking
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 
 // ─── Wizard Steps ─────────────────────────────────────────────────────────────
 
@@ -72,20 +90,24 @@ const STEP_TITLES: Record<WizardStep, string> = {
 
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
-const StepIndicator = ({ current, total }: { current: number; total: number }) => (
-    <View style={styles.stepIndicator}>
-        {Array.from({ length: total }, (_, i) => (
-            <View
-                key={i}
-                style={[
-                    styles.stepDot,
-                    i + 1 === current && styles.stepDotActive,
-                    i + 1 < current && styles.stepDotDone,
-                ]}
-            />
-        ))}
-    </View>
-);
+const StepIndicator = ({ current, total }: { current: number; total: number }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
+    return (
+        <View style={styles.stepIndicator}>
+            {Array.from({ length: total }, (_, i) => (
+                <View
+                    key={i}
+                    style={[
+                        styles.stepDot,
+                        i + 1 === current && styles.stepDotActive,
+                        i + 1 < current && styles.stepDotDone,
+                    ]}
+                />
+            ))}
+        </View>
+    );
+};
 
 // ─── Number Stepper (for sets/reps) ───────────────────────────────────────────
 
@@ -103,28 +125,32 @@ const NumberStepper = ({
     min?: number;
     max?: number;
     label: string;
-}) => (
-    <View style={styles.stepper}>
-        <Text style={styles.stepperLabel}>{label}</Text>
-        <View style={styles.stepperControls}>
-            <TouchableOpacity
-                style={[styles.stepperBtn, value <= min && styles.stepperBtnDisabled]}
-                onPress={onDec}
-                disabled={value <= min}
-            >
-                <Minus size={12} color={value <= min ? Colors.border : Colors.text} />
-            </TouchableOpacity>
-            <Text style={styles.stepperValue}>{value}</Text>
-            <TouchableOpacity
-                style={[styles.stepperBtn, value >= max && styles.stepperBtnDisabled]}
-                onPress={onInc}
-                disabled={value >= max}
-            >
-                <Plus size={12} color={value >= max ? Colors.border : Colors.text} />
-            </TouchableOpacity>
+}) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
+    return (
+        <View style={styles.stepper}>
+            <Text style={styles.stepperLabel}>{label}</Text>
+            <View style={styles.stepperControls}>
+                <TouchableOpacity
+                    style={[styles.stepperBtn, value <= min && styles.stepperBtnDisabled]}
+                    onPress={onDec}
+                    disabled={value <= min}
+                >
+                    <Minus size={12} color={value <= min ? colors.border : colors.text} />
+                </TouchableOpacity>
+                <Text style={styles.stepperValue}>{value}</Text>
+                <TouchableOpacity
+                    style={[styles.stepperBtn, value >= max && styles.stepperBtnDisabled]}
+                    onPress={onInc}
+                    disabled={value >= max}
+                >
+                    <Plus size={12} color={value >= max ? colors.border : colors.text} />
+                </TouchableOpacity>
+            </View>
         </View>
-    </View>
-);
+    );
+};
 
 // ─── Plan Card (saved plans) ──────────────────────────────────────────────────
 
@@ -133,12 +159,16 @@ const PlanCard = ({
     onDelete,
     onSaveLog,
     onEdit,
+    onDuplicate,
 }: {
     plan: MonthlyPlan;
     onDelete: (id: string) => void;
     onSaveLog: (planId: string, log: DayLog) => Promise<void>;
     onEdit: (plan: MonthlyPlan) => void;
+    onDuplicate: (plan: MonthlyPlan) => void;
 }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { currentUser } = useUser();
     const { allExercises: contextExercises } = usePlans();
     const [expanded, setExpanded] = useState(false);
@@ -150,7 +180,8 @@ const PlanCard = ({
     const [isSaving, setIsSaving] = useState(false);
 
     const isCoach = currentUser?.role === 'coach';
-    const isClientOfThisPlan = currentUser?.role === 'client' && String(plan.assignedClientId) === String(currentUser.id);
+    const isIndependent = currentUser?.role === 'independiente';
+    const isClientOfThisPlan = (currentUser?.role === 'client' || isIndependent) && String(plan.assignedClientId) === String(currentUser.id);
     // If it's a coach and the plan is assigned to someone else (a client), it's read only.
     // Also, if it's a client but the plan is not theirs (shouldn't happen with current API), it's read only.
     const isReadOnly = isCoach && String(plan.assignedClientId) !== String(currentUser?.id);
@@ -234,7 +265,7 @@ const PlanCard = ({
         }));
         const newSession: SessionLog = {
             sessionNumber: sessionCount + 1,
-            date: new Date().toISOString(),
+            date: formatToLocalISO(new Date()),
             exercises,
             comment: sessionComment.trim() || undefined,
         };
@@ -278,7 +309,7 @@ const PlanCard = ({
             >
                 <View style={styles.planCardLeft}>
                     <View style={styles.planMonthBadge}>
-                        <CalendarDays size={16} color={Colors.primary} />
+                        <CalendarDays size={18} color="#38BDF8" />
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.planCardTitle}>
@@ -288,15 +319,15 @@ const PlanCard = ({
                             {plan.daysPerWeek} días/sem · {plan.splitType} · {totalExercises} ejercicios
                         </Text>
                         {clientName && (
-                            <Text style={[styles.planCardSub, { color: Colors.primary, marginTop: 2, fontWeight: '600' }]}>
+                            <Text style={[styles.planCardSub, { color: '#38BDF8', marginTop: 2, fontWeight: '600' }]}>
                                 👤 {clientName}
                             </Text>
                         )}
                         {Object.keys(planVolumes).length > 0 && (
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                                 {Object.entries(planVolumes).map(([g, vol]) => (
-                                    <View key={g} style={{ backgroundColor: (MuscleGroupColors[g] || Colors.primary) + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                                        <Text style={{ color: MuscleGroupColors[g] || Colors.primary, fontSize: 10, fontWeight: '600' }}>
+                                    <View key={g} style={{ backgroundColor: (MuscleGroupColors[g] || '#2563EB') + '22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                        <Text style={{ color: MuscleGroupColors[g] || '#38BDF8', fontSize: 10, fontWeight: '600' }}>
                                             {g}: {vol}s
                                         </Text>
                                     </View>
@@ -311,26 +342,48 @@ const PlanCard = ({
                     )}
                 </View>
                 <View style={styles.planCardRight}>
-                    {isCoach && (
+                    {(isCoach || (isIndependent && String(plan.assignedClientId) === String(currentUser?.id))) && (
                         <>
+                            <TouchableOpacity
+                                style={styles.copyBtn}
+                                onPress={() => onDuplicate(plan)}
+                            >
+                                <Copy size={14} color="#A855F7" />
+                            </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.editBtn}
                                 onPress={() => onEdit(plan)}
                             >
-                                <Pencil size={14} color={Colors.primary} />
+                                <Pencil size={14} color="#38BDF8" />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.deleteBtn}
-                                onPress={() => onDelete(plan.id)}
+                                onPress={() => {
+                                    showToast.confirm(
+                                        'Eliminar Plan de Entrenamiento',
+                                        `¿Estás seguro de que deseas eliminar el plan "${plan.month} ${plan.year}"${clientName ? ` de ${clientName}` : ''}? Esta acción no se puede deshacer.`,
+                                        [
+                                            {
+                                                text: 'Eliminar Plan',
+                                                style: 'destructive',
+                                                onPress: () => onDelete(plan.id),
+                                            },
+                                            {
+                                                text: 'Cancelar',
+                                                style: 'cancel',
+                                            }
+                                        ]
+                                    );
+                                }}
                             >
-                                <Trash2 size={14} color={Colors.danger} />
+                                <Trash2 size={14} color="#EF4444" />
                             </TouchableOpacity>
                         </>
                     )}
                     {expanded ? (
-                        <ChevronUp size={16} color={Colors.textMuted} />
+                        <ChevronUp size={16} color="#94A3B8" />
                     ) : (
-                        <ChevronDown size={16} color={Colors.textMuted} />
+                        <ChevronDown size={16} color="#94A3B8" />
                     )}
                 </View>
             </TouchableOpacity>
@@ -355,7 +408,7 @@ const PlanCard = ({
                                             <Text style={styles.dayLabel}>{day.label}</Text>
                                             {hasLog && (
                                                 <View style={styles.loggedBadge}>
-                                                    <Check size={10} color="#000" />
+                                                    <Check size={10} color="#FFFFFF" strokeWidth={3} />
                                                 </View>
                                             )}
                                             {sessionCount > 0 && (
@@ -544,6 +597,19 @@ const PlanCard = ({
                                                                 </Text>
                                                             ) : null}
 
+                                                            {/* Preview de Video del ejercicio en el plan */}
+                                                            {(pe.videoUrl || pe.exercise.videoUrl) ? (
+                                                                (() => {
+                                                                    const vUrl = pe.videoUrl || pe.exercise.videoUrl!;
+                                                                    return isExternalVideoLink(vUrl) ? (
+                                                                        <ExternalVideoCard
+                                                                            url={vUrl}
+                                                                            style={{ width: '100%', height: 160, borderRadius: 12, marginTop: 10 }}
+                                                                        />
+                                                                    ) : null;
+                                                                })()
+                                                            ) : null}
+
                                                             {/* Set headers */}
                                                             <View style={styles.logSetHeader}>
                                                                 <Text style={styles.logSetHeaderText}>Serie</Text>
@@ -625,34 +691,51 @@ interface QuickAddProps {
 }
 
 const QuickAddExercise = ({ visible, defaultGroup, onAdd, onClose }: QuickAddProps) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { muscleGroups } = usePlans();
     const [name, setName] = useState('');
     const [equipment, setEquipment] = useState('');
     const [description, setDescription] = useState('');
+    const [videoLink, setVideoLink] = useState('');
     const [selectedGroup, setSelectedGroup] = useState<string>(defaultGroup);
 
     useEffect(() => {
         if (defaultGroup) setSelectedGroup(defaultGroup);
     }, [defaultGroup]);
 
-    const reset = () => { setName(''); setEquipment(''); setDescription(''); setSelectedGroup(defaultGroup); };
+    const handleNameChange = (val: string) => {
+        setName(val);
+        const inferred = inferMuscleGroupFromName(val);
+        if (inferred) {
+            setSelectedGroup(inferred);
+        }
+    };
+
+    const reset = () => { setName(''); setEquipment(''); setDescription(''); setVideoLink(''); setSelectedGroup(defaultGroup); };
 
     const handleAdd = () => {
         if (!name.trim()) {
             Alert.alert('Nombre requerido', 'Ingresa un nombre para el ejercicio.');
             return;
         }
+        if (videoLink.trim() && !isValidWebUrl(videoLink)) {
+            Alert.alert('Link inválido', 'Ingresa un enlace válido (YouTube, Instagram, TikTok, etc.).');
+            return;
+        }
+        const effectiveGroup = sanitizeExerciseGroup(name.trim(), selectedGroup);
         const ex: Exercise = {
             id: `custom-${Date.now()}`,
             name: name.trim(),
-            muscleGroup: selectedGroup,
+            muscleGroup: effectiveGroup,
             equipment: equipment.trim() || 'Peso corporal',
             description: description.trim() || 'Ejercicio personalizado.',
-            primaryMuscles: [selectedGroup],
+            primaryMuscles: [effectiveGroup],
             secondaryMuscles: [],
             benefits: [],
             level: 'Principiante',
             isCustom: true,
+            videoUrl: videoLink.trim() ? normalizeVideoLink(videoLink) : undefined,
         };
         onAdd(ex);
         reset();
@@ -674,7 +757,7 @@ const QuickAddExercise = ({ visible, defaultGroup, onAdd, onClose }: QuickAddPro
                     placeholder="Nombre del ejercicio..."
                     placeholderTextColor={Colors.textMuted}
                     value={name}
-                    onChangeText={setName}
+                    onChangeText={handleNameChange}
                 />
                 <View style={styles.quickAddRow}>
                     <View style={{ flex: 1 }}>
@@ -717,12 +800,30 @@ const QuickAddExercise = ({ visible, defaultGroup, onAdd, onClose }: QuickAddPro
                     value={description}
                     onChangeText={setDescription}
                 />
+                <View style={[styles.quickAddInput, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 0 }]}>
+                    <Link2 size={16} color={videoLink ? Colors.primary : Colors.textMuted} />
+                    <TextInput
+                        style={{ flex: 1, color: Colors.text, paddingVertical: 10 }}
+                        placeholder="Link de video (YouTube, Instagram...)"
+                        placeholderTextColor={Colors.textMuted}
+                        value={videoLink}
+                        onChangeText={setVideoLink}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                    />
+                    {videoLink.length > 0 && (
+                        <TouchableOpacity onPress={() => setVideoLink('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={14} color={Colors.textMuted} />
+                        </TouchableOpacity>
+                    )}
+                </View>
                 <View style={styles.quickAddActions}>
                     <TouchableOpacity style={styles.quickAddCancel} onPress={onClose}>
                         <Text style={styles.quickAddCancelText}>Cancelar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.quickAddBtn} onPress={handleAdd}>
-                        <Check size={16} color="#000" />
+                        <Check size={16} color="#FFFFFF" strokeWidth={2.5} />
                         <Text style={styles.quickAddBtnText}>Añadir</Text>
                     </TouchableOpacity>
                 </View>
@@ -810,6 +911,21 @@ const parseVoiceInput = (input: string, allExercises: Exercise[], defaultMuscleG
     const searchName = exerciseName.toLowerCase();
     let foundExercise = allExercises.find(ex => ex.name.toLowerCase() === searchName || ex.name.toLowerCase().includes(searchName));
 
+    // If muscle was not explicitly spoken, infer from exercise name or existing exercise
+    if (!muscleMatch) {
+        if (foundExercise?.muscleGroup) {
+            muscleGroup = foundExercise.muscleGroup;
+        } else {
+            const inferred = inferMuscleGroupFromName(exerciseName);
+            if (inferred) {
+                muscleGroup = inferred;
+            }
+        }
+    }
+
+    // Always sanitize to prevent contradictions (e.g. Bicep exercise on a Quad day)
+    muscleGroup = sanitizeExerciseGroup(exerciseName, muscleGroup);
+
     if (!foundExercise) {
         foundExercise = {
             id: `custom-voice-${Date.now()}`,
@@ -835,6 +951,8 @@ const parseVoiceInput = (input: string, allExercises: Exercise[], defaultMuscleG
 };
 
 const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: { visible: boolean, onClose: () => void, onAdd: (parsed: any) => void, allExercises: Exercise[], defaultGroup: string }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const [text, setText] = useState('');
     const [parsedData, setParsedData] = useState<any>(null);
 
@@ -898,9 +1016,9 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                 />
                                 <TouchableOpacity
                                     style={{
-                                        backgroundColor: Colors.primary,
+                                        backgroundColor: '#2563EB',
                                         padding: 16,
-                                        borderRadius: 12,
+                                        borderRadius: 14,
                                         marginTop: 20,
                                         flexDirection: 'row',
                                         justifyContent: 'center',
@@ -908,8 +1026,8 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     }}
                                     onPress={handleProcess}
                                 >
-                                    <Mic size={18} color="#000" style={{ marginRight: 8 }} />
-                                    <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 16 }}>Procesar Texto</Text>
+                                    <Mic size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                                    <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 }}>Procesar Texto</Text>
                                 </TouchableOpacity>
                             </>
                         ) : (
@@ -920,14 +1038,14 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
 
                                 <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Grupo Muscular</Text>
                                 <TextInput
-                                    style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, marginBottom: 12 }}
+                                    style={{ backgroundColor: '#080F1E', color: '#FFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', marginBottom: 12 }}
                                     value={parsedData.exercise.muscleGroup}
                                     onChangeText={v => setParsedData({ ...parsedData, exercise: { ...parsedData.exercise, muscleGroup: v } })}
                                 />
 
                                 <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Nombre del Ejercicio</Text>
                                 <TextInput
-                                    style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, marginBottom: 12 }}
+                                    style={{ backgroundColor: '#080F1E', color: '#FFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', marginBottom: 12 }}
                                     value={parsedData.exercise.name}
                                     onChangeText={v => setParsedData({ ...parsedData, exercise: { ...parsedData.exercise, name: v } })}
                                 />
@@ -936,7 +1054,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     <View style={{ flex: 1 }}>
                                         <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Series</Text>
                                         <TextInput
-                                            style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
+                                            style={{ backgroundColor: '#080F1E', color: '#38BDF8', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', fontWeight: '700' }}
                                             value={String(parsedData.sets)}
                                             keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, sets: parseInt(v) || 0 })}
@@ -945,7 +1063,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     <View style={{ flex: 1 }}>
                                         <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Min Reps</Text>
                                         <TextInput
-                                            style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
+                                            style={{ backgroundColor: '#080F1E', color: '#FFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B' }}
                                             value={String(parsedData.minReps)}
                                             keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, minReps: parseInt(v) || 0 })}
@@ -954,7 +1072,7 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
                                     <View style={{ flex: 1 }}>
                                         <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Max Reps</Text>
                                         <TextInput
-                                            style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}
+                                            style={{ backgroundColor: '#080F1E', color: '#FFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B' }}
                                             value={String(parsedData.maxReps)}
                                             keyboardType="decimal-pad"
                                             onChangeText={v => setParsedData({ ...parsedData, maxReps: parseInt(v) || 0 })}
@@ -964,23 +1082,23 @@ const VoiceAddModal = ({ visible, onClose, onAdd, allExercises, defaultGroup }: 
 
                                 <Text style={{ color: Colors.textMuted, marginBottom: 4, fontSize: 12 }}>Instrucción / Comentario</Text>
                                 <TextInput
-                                    style={{ backgroundColor: Colors.surface, color: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, marginBottom: 20 }}
+                                    style={{ backgroundColor: '#080F1E', color: '#FFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', marginBottom: 20 }}
                                     value={parsedData.instruction}
                                     onChangeText={v => setParsedData({ ...parsedData, instruction: v })}
                                 />
 
                                 <TouchableOpacity
-                                    style={{ backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' }}
+                                    style={{ backgroundColor: '#2563EB', padding: 16, borderRadius: 14, alignItems: 'center' }}
                                     onPress={handleConfirm}
                                 >
-                                    <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 16 }}>Confirmar y Añadir</Text>
+                                    <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 }}>Confirmar y Añadir</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
                                     style={{ padding: 16, alignItems: 'center', marginTop: 8 }}
                                     onPress={() => setParsedData(null)}
                                 >
-                                    <Text style={{ color: Colors.primary, fontSize: 14 }}>Reintentar dictado</Text>
+                                    <Text style={{ color: '#38BDF8', fontSize: 14, fontWeight: '600' }}>Reintentar dictado</Text>
                                 </TouchableOpacity>
                             </ScrollView>
                         )}
@@ -1008,8 +1126,12 @@ const ExercisePicker = ({
     onAddToLibrary: (exercise: Exercise) => Promise<Exercise | undefined>;
     onClose: () => void;
 }) => {
+    const insets = useSafeAreaInsets();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { allExercises } = usePlans();
     const [filterGroup, setFilterGroup] = useState<string | 'Todos'>('Todos');
+    const [searchQuery, setSearchQuery] = useState('');
     const [showQuickAdd, setShowQuickAdd] = useState(false);
     const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
@@ -1018,14 +1140,41 @@ const ExercisePicker = ({
 
         if (filterGroup !== 'Todos') {
             list = list.filter((e) => {
-                const hasPrimaryGroup = Array.isArray(e.primaryMuscles)
-                    ? e.primaryMuscles.includes(filterGroup)
-                    : (typeof e.primaryMuscles === 'string' && e.primaryMuscles.includes(filterGroup));
-                return e.muscleGroup === filterGroup || hasPrimaryGroup;
+                const effectiveGroup = sanitizeExerciseGroup(e.name, e.muscleGroup);
+                if (isSameMuscleGroup(effectiveGroup, filterGroup)) {
+                    return true;
+                }
+
+                // If effectiveGroup is from a conflicting category (e.g. Bicep/Tricep vs Quad/Ham/Glute),
+                // prevent leakage via primaryMuscles tags
+                const isArm = isSameMuscleGroup(effectiveGroup, 'Bícep') || isSameMuscleGroup(effectiveGroup, 'Trícep');
+                const isLegFilter = isSameMuscleGroup(filterGroup, 'Cuádriceps') || isSameMuscleGroup(filterGroup, 'Isquios') || isSameMuscleGroup(filterGroup, 'Glúteos');
+                if (isArm && isLegFilter) return false;
+
+                const isLeg = isSameMuscleGroup(effectiveGroup, 'Cuádriceps') || isSameMuscleGroup(effectiveGroup, 'Isquios') || isSameMuscleGroup(filterGroup, 'Glúteos');
+                const isArmFilter = isSameMuscleGroup(filterGroup, 'Bícep') || isSameMuscleGroup(filterGroup, 'Trícep');
+                if (isLeg && isArmFilter) return false;
+
+                const pm = e.primaryMuscles as string[] | string | undefined | null;
+                const hasPrimaryGroup = Array.isArray(pm)
+                    ? pm.some(m => isSameMuscleGroup(m, filterGroup))
+                    : typeof pm === 'string' && isSameMuscleGroup(pm, filterGroup);
+
+                return Boolean(hasPrimaryGroup);
             });
         }
+
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            list = list.filter((e) =>
+                e.name.toLowerCase().includes(q) ||
+                (e.equipment && e.equipment.toLowerCase().includes(q)) ||
+                (e.muscleGroup && e.muscleGroup.toLowerCase().includes(q))
+            );
+        }
+
         return list;
-    }, [filterGroup, allExercises]);
+    }, [filterGroup, searchQuery, allExercises]);
 
     const handleAddNew = async (ex: Exercise) => {
         const created = await onAddToLibrary(ex);
@@ -1052,11 +1201,11 @@ const ExercisePicker = ({
                                 style={styles.pickerNewBtn}
                                 onPress={() => setShowQuickAdd(!showQuickAdd)}
                             >
-                                <Plus size={14} color={Colors.primary} />
+                                <Plus size={14} color="#38BDF8" />
                                 <Text style={styles.pickerNewBtnText}>Nuevo</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.pickerClose} onPress={onClose}>
-                                <X size={18} color={Colors.textMuted} />
+                                <X size={18} color="#94A3B8" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1069,11 +1218,31 @@ const ExercisePicker = ({
                         onClose={() => setShowQuickAdd(false)}
                     />
 
+                    {/* Search Input */}
+                    <View style={styles.pickerSearchContainer}>
+                        <Search size={16} color="#64748B" style={styles.pickerSearchIcon} />
+                        <TextInput
+                            style={styles.pickerSearchInput}
+                            placeholder="Buscar ejercicio o equipo..."
+                            placeholderTextColor="#64748B"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            clearButtonMode="while-editing"
+                            autoCorrect={false}
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <X size={16} color="#94A3B8" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
                     {/* Filter by muscle group */}
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
                         style={styles.pickerFilters}
+                        contentContainerStyle={styles.pickerFiltersContent}
                     >
                         <TouchableOpacity
                             style={[
@@ -1091,90 +1260,116 @@ const ExercisePicker = ({
                                 Todos
                             </Text>
                         </TouchableOpacity>
-                        {muscleGroups.map((g: string) => (
-                            <TouchableOpacity
-                                key={g}
-                                style={[
-                                    styles.pickerChip,
-                                    filterGroup === g && {
-                                        backgroundColor: (MuscleGroupColors[g] || Colors.primary) + '18',
-                                        borderColor: MuscleGroupColors[g] || Colors.primary,
-                                    },
-                                ]}
-                                onPress={() => setFilterGroup(g)}
-                            >
-                                <Text
-                                    style={[
-                                        styles.pickerChipText,
-                                        filterGroup === g && {
-                                            color: MuscleGroupColors[g] || Colors.primary,
-                                        },
-                                    ]}
-                                >
-                                    {g}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-
-                    <FlatList
-                        data={available}
-                        keyExtractor={(item) => item.id}
-                        contentContainerStyle={{ paddingBottom: 20 }}
-                        renderItem={({ item }) => {
-                            const selected = selectedIds.has(item.id);
+                        {muscleGroups.map((g: string) => {
+                            const isGroupActive = isSameMuscleGroup(filterGroup, g);
                             return (
                                 <TouchableOpacity
-                                    style={[styles.exerciseRow, selected && styles.exerciseRowSelected]}
-                                    activeOpacity={0.7}
-                                    onPress={() => onToggle(item)}
+                                    key={g}
+                                    style={[
+                                        styles.pickerChip,
+                                        isGroupActive && {
+                                            backgroundColor: (MuscleGroupColors[g] || '#2563EB') + '22',
+                                            borderColor: MuscleGroupColors[g] || '#2563EB',
+                                        },
+                                    ]}
+                                    onPress={() => setFilterGroup(g)}
                                 >
-                                    <View style={styles.exerciseRowLeft}>
-                                        <View
-                                            style={[
-                                                styles.exerciseRowDot,
-                                                {
-                                                    backgroundColor:
-                                                        MuscleGroupColors[item.muscleGroup] || Colors.primary,
-                                                },
-                                            ]}
-                                        />
-                                        <View style={{ flex: 1 }}>
-                                            <View style={styles.exerciseRowNameRow}>
-                                                <Text style={styles.exerciseRowName} numberOfLines={1}>
-                                                    {item.name}
-                                                </Text>
-                                                {item.isCustom && (
-                                                    <View style={styles.customBadge}>
-                                                        <Text style={styles.customBadgeText}>Nuevo</Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                            <Text style={styles.exerciseRowEquip}>{item.equipment}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                        {item.videoUrl && (
-                                            <TouchableOpacity
-                                                onPress={(e) => { e.stopPropagation(); setDetailExercise(item); }}
-                                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                            >
-                                                <Info size={18} color={Colors.primary} />
-                                            </TouchableOpacity>
-                                        )}
-                                        <View
-                                            style={[
-                                                styles.exerciseCheckbox,
-                                                selected && styles.exerciseCheckboxActive,
-                                            ]}
-                                        >
-                                            {selected && <Check size={12} color="#000" />}
-                                        </View>
-                                    </View>
+                                    <Text
+                                        style={[
+                                            styles.pickerChipText,
+                                            isGroupActive && {
+                                                color: MuscleGroupColors[g] || '#38BDF8',
+                                            },
+                                        ]}
+                                    >
+                                        {g}
+                                    </Text>
                                 </TouchableOpacity>
                             );
-                        }}
-                    />
+                        })}
+                    </ScrollView>
+
+                    {available.length === 0 ? (
+                        <View style={styles.pickerEmptyContainer}>
+                            <Text style={styles.pickerEmptyText}>No se encontraron ejercicios</Text>
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={available}
+                            keyExtractor={(item) => item.id}
+                            style={{ flex: 1 }}
+                            contentContainerStyle={{ paddingBottom: 16 }}
+                            renderItem={({ item }) => {
+                                const selected = selectedIds.has(item.id);
+                                return (
+                                    <TouchableOpacity
+                                        style={[styles.exerciseRow, selected && styles.exerciseRowSelected]}
+                                        activeOpacity={0.7}
+                                        onPress={() => onToggle(item)}
+                                    >
+                                        <View style={styles.exerciseRowLeft}>
+                                            <View
+                                                style={[
+                                                    styles.exerciseRowDot,
+                                                    {
+                                                        backgroundColor:
+                                                            MuscleGroupColors[item.muscleGroup] || '#2563EB',
+                                                    },
+                                                ]}
+                                            />
+                                            <View style={{ flex: 1 }}>
+                                                <View style={styles.exerciseRowNameRow}>
+                                                    <Text style={styles.exerciseRowName} numberOfLines={1}>
+                                                        {item.name}
+                                                    </Text>
+                                                    {item.isCustom && (
+                                                        <View style={styles.customBadge}>
+                                                            <Text style={styles.customBadgeText}>Nuevo</Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                                <Text style={styles.exerciseRowEquip}>{item.equipment}</Text>
+                                            </View>
+                                        </View>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                            {item.videoUrl && (
+                                                <TouchableOpacity
+                                                    onPress={(e) => { e.stopPropagation(); setDetailExercise(item); }}
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                                >
+                                                    <Info size={18} color="#38BDF8" />
+                                                </TouchableOpacity>
+                                            )}
+                                            <View
+                                                style={[
+                                                    styles.exerciseCheckbox,
+                                                    selected && styles.exerciseCheckboxActive,
+                                                ]}
+                                            >
+                                                {selected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            }}
+                        />
+                    )}
+
+                    {/* Botón para terminar selección y cerrar tarjeta */}
+                    <View style={[styles.pickerFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                        <TouchableOpacity
+                            style={styles.pickerDoneBtn}
+                            onPress={onClose}
+                            activeOpacity={0.8}
+                        >
+                            <Check size={18} color="#FFFFFF" strokeWidth={2.5} />
+                            <Text style={styles.pickerDoneBtnText}>
+                                {selectedIds.size > 0
+                                    ? `Terminar Selección (${selectedIds.size})`
+                                    : 'Terminar Selección'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </KeyboardAvoidingView>
 
@@ -1191,7 +1386,12 @@ const ExercisePicker = ({
                         </Text>
 
                         {detailExercise?.videoUrl && (
-                            detailExercise.videoUrl.toLowerCase().includes('.mp4') ? (
+                            isExternalVideoLink(detailExercise.videoUrl) ? (
+                                <ExternalVideoCard
+                                    url={detailExercise.videoUrl}
+                                    style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 12 }}
+                                />
+                            ) : detailExercise.videoUrl.toLowerCase().includes('.mp4') ? (
                                 <SafeVideo
                                     sourceUri={detailExercise.videoUrl.startsWith('http') ? detailExercise.videoUrl : `${API_HOST}${detailExercise.videoUrl.startsWith('/') ? '' : '/'}${detailExercise.videoUrl}`}
                                     style={{ width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: '#000' }}
@@ -1223,18 +1423,24 @@ const ExercisePicker = ({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function PlanScreen() {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { plans, setPlans, addPlan, deletePlan, saveLog, updatePlan, allExercises, muscleGroups, refreshMetadata, fetchPlans, addExercise } = usePlans();
 
     // User context for role-based features
-    const { currentUser, clients } = useUser();
+    const { currentUser, clients, refreshProfile } = useUser();
 
     const [refreshing, setRefreshing] = useState(false);
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
-        await Promise.all([fetchPlans(), refreshMetadata()]);
+        await Promise.all([fetchPlans(), refreshMetadata(), refreshProfile()]);
         setRefreshing(false);
-    }, [fetchPlans, refreshMetadata]);
+    }, [fetchPlans, refreshMetadata, refreshProfile]);
+
+    useEffect(() => {
+        refreshProfile().catch(() => {});
+    }, [refreshProfile]);
 
     // Wizard state
     const [showWizard, setShowWizard] = useState(false);
@@ -1254,6 +1460,16 @@ export default function PlanScreen() {
     const [pickerDayIdx, setPickerDayIdx] = useState<number | null>(null);
     const [replaceExerciseInfo, setReplaceExerciseInfo] = useState<{ dayIdx: number, peId: string } | null>(null);
     const [voiceModalDayIdx, setVoiceModalDayIdx] = useState<number | null>(null);
+    const [optionsPush, setOptionsPush] = useState<{
+        title: string;
+        message: string;
+        isDestructive?: boolean;
+        options: Array<{
+            text: string;
+            style?: 'default' | 'destructive' | 'cancel';
+            onPress: () => void;
+        }>;
+    } | null>(null);
     const [implicitClient, setImplicitClient] = useState(false);
     const [filterClientId, setFilterClientId] = useState<string | null>(null);
     const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
@@ -1340,6 +1556,9 @@ export default function PlanScreen() {
         if (filterClientId && isCoach) {
             setAssignedClientId(filterClientId);
             setImplicitClient(true);
+        } else if (currentUser?.role === 'independiente') {
+            setAssignedClientId(currentUser.id);
+            setImplicitClient(true);
         } else {
             setAssignedClientId(null);
             setImplicitClient(false);
@@ -1350,7 +1569,9 @@ export default function PlanScreen() {
     const [clientSearchQuery, setClientSearchQuery] = useState('');
 
     const isCoach = currentUser?.role === 'coach';
+    const isIndependent = currentUser?.role === 'independiente';
     const isClient = currentUser?.role === 'client';
+    const canManagePlans = isCoach || isIndependent;
 
     // Filter plans: Coach sees all plans they created, or plans belonging to them
     // Client only sees plans assigned to them
@@ -1382,13 +1603,15 @@ export default function PlanScreen() {
                     );
                 });
             }
+        } else if (isIndependent) {
+            list = list.filter(p => String(p.assignedClientId) === String(currentUser.id) || String(p.userId) === String(currentUser.id));
         } else {
             list = list.filter(p => String(p.assignedClientId) === String(currentUser.id));
         }
 
         return list.sort((a, b) => {
             if (b.year !== a.year) return b.year - a.year;
-            return MONTHS.indexOf(b.month) - MONTHS.indexOf(a.month);
+            return MONTHS.indexOf(b.month as any) - MONTHS.indexOf(a.month as any);
         });
     }, [plans, currentUser?.id, currentUser?.name, isCoach, filterClientId, clientSearchQuery, clients]);
 
@@ -1400,17 +1623,34 @@ export default function PlanScreen() {
             { id: currentUser.id, label: 'Yo (Mis Planes)' },
         ];
         const query = clientSearchQuery.toLowerCase().trim();
+        const seenIds = new Set<string>([String(currentUser.id)]);
+
+        // 1. Añadir todos los clientes registrados (tengan o no tengan planes todavía)
         clients.forEach(c => {
+            if (seenIds.has(String(c.id))) return;
+            seenIds.add(String(c.id));
             if (
                 !query ||
                 c.name.toLowerCase().includes(query) ||
                 (c.username && c.username.toLowerCase().includes(query))
             ) {
-                options.push({ id: c.id, label: c.name || 'Cliente' });
+                options.push({ id: String(c.id), label: c.name || 'Cliente' });
             }
         });
+
+        // 2. Añadir también cualquier usuario que tenga un plan asignado existente
+        plans.forEach(p => {
+            if (p.assignedClientId && !seenIds.has(String(p.assignedClientId))) {
+                seenIds.add(String(p.assignedClientId));
+                const name = (p as any).assignedClient?.name || `Cliente #${p.assignedClientId}`;
+                if (!query || name.toLowerCase().includes(query)) {
+                    options.push({ id: String(p.assignedClientId), label: name });
+                }
+            }
+        });
+
         return options;
-    }, [isCoach, currentUser, clients, clientSearchQuery]);
+    }, [isCoach, currentUser, clients, clientSearchQuery, plans]);
 
     const createPlan = async () => {
         // Calculate target volumes automatically
@@ -1446,7 +1686,7 @@ export default function PlanScreen() {
                     });
                 } else {
                     const newPlan: Omit<MonthlyPlan, 'id'> = {
-                        assignedClientId: assignedClientId || currentUser?.id || 'coach-1',
+                        assignedClientId: isIndependent ? currentUser?.id : (assignedClientId || currentUser?.id || 'coach-1'),
                         month: selectedMonth,
                         year: selectedYear,
                         daysPerWeek,
@@ -1520,6 +1760,46 @@ export default function PlanScreen() {
         setStep(1); // Go to step 1 so they can edit comments
         setImplicitClient(false);
         setShowWizard(true);
+    };
+
+    const handleDuplicatePlan = (plan: MonthlyPlan) => {
+        showToast.confirm(
+            'Duplicar Plan',
+            `¿Deseas duplicar este plan como base para crear uno nuevo? Podrás modificar el mes, cliente y especificaciones antes de guardar.`,
+            [
+                {
+                    text: 'Duplicar y modificar',
+                    style: 'default',
+                    onPress: () => {
+                        setEditingPlanId(null); // Modo crear nuevo plan (no sobrescribir el existente)
+                        setAssignedClientId(plan.assignedClientId || null);
+                        setSelectedMonth(plan.month as typeof MONTHS[number]);
+                        setSelectedYear(plan.year);
+                        setDaysPerWeek(plan.daysPerWeek);
+                        setSplitType(plan.splitType);
+                        const clonedDays = (plan.days || []).map(day => ({
+                            ...day,
+                            id: undefined,
+                            exercises: (day.exercises || []).map(pe => ({
+                                ...pe,
+                                id: undefined,
+                            }))
+                        }));
+                        setTrainingDays(clonedDays);
+                        setPlanNotes(plan.notes || '');
+                        setPlanComment(plan.comment || '');
+                        setStep(1);
+                        setImplicitClient(false);
+                        setShowWizard(true);
+                        showToast.info('Puedes modificar las especificaciones del nuevo plan');
+                    }
+                },
+                {
+                    text: 'Cancelar',
+                    style: 'cancel'
+                }
+            ]
+        );
     };
 
     const handleAddToLibrary = async (exercise: Exercise) => {
@@ -1641,6 +1921,21 @@ export default function PlanScreen() {
         });
     };
 
+    const updateVideoUrl = (dayIdx: number, exerciseId: string, videoUrl: string) => {
+        setTrainingDays((prev) => {
+            const updated = [...prev];
+            const day = { ...updated[dayIdx] };
+            day.exercises = day.exercises.map((pe) => {
+                if (pe.exercise.id === exerciseId) {
+                    return { ...pe, videoUrl: videoUrl ? normalizeVideoLink(videoUrl) : undefined };
+                }
+                return pe;
+            });
+            updated[dayIdx] = day;
+            return updated;
+        });
+    };
+
 
 
     // ── Render Wizard Steps ─────────────────────────────────────────────────
@@ -1664,6 +1959,146 @@ export default function PlanScreen() {
         return result;
     };
 
+    // Sort exercises in a day by biomechanical priority tier (Compuestos -> Accesorios -> Aislamiento)
+    const sortDayByPriority = (dayIdx: number) => {
+        const day = trainingDays[dayIdx];
+        if (!day || day.exercises.length < 2) return;
+
+        const groups = groupExercises(day.exercises);
+        groups.sort((a, b) => {
+            const tierA = Math.min(...a.items.map(pe => getExercisePriority(pe.exercise).tier));
+            const tierB = Math.min(...b.items.map(pe => getExercisePriority(pe.exercise).tier));
+            if (tierA !== tierB) return tierA - tierB;
+            return a.items[0].exercise.name.localeCompare(b.items[0].exercise.name);
+        });
+
+        const flattened: PlannedExercise[] = [];
+        groups.forEach(g => {
+            flattened.push(...g.items);
+        });
+
+        const newDays = [...trainingDays];
+        newDays[dayIdx].exercises = flattened;
+        setTrainingDays(newDays);
+        showToast.success('Orden sugerido aplicado (Compuestos primero)');
+    };
+
+    // Move an entire routine block (single exercise or superset) to top, up, down, or specific position
+    const moveRoutineBlock = (dayIdx: number, fromBlockIdx: number, target: 'top' | 'up' | 'down' | number) => {
+        const day = trainingDays[dayIdx];
+        if (!day || day.exercises.length < 2) return;
+
+        const blocks = groupExercises(day.exercises);
+        if (fromBlockIdx < 0 || fromBlockIdx >= blocks.length) return;
+
+        let toIdx = fromBlockIdx;
+        if (target === 'top') {
+            toIdx = 0;
+        } else if (target === 'up') {
+            toIdx = Math.max(0, fromBlockIdx - 1);
+        } else if (target === 'down') {
+            toIdx = Math.min(blocks.length - 1, fromBlockIdx + 1);
+        } else if (typeof target === 'number') {
+            toIdx = Math.max(0, Math.min(blocks.length - 1, target));
+        }
+
+        if (toIdx === fromBlockIdx) return;
+
+        const newBlocks = [...blocks];
+        const [moved] = newBlocks.splice(fromBlockIdx, 1);
+        newBlocks.splice(toIdx, 0, moved);
+
+        const flattened: PlannedExercise[] = [];
+        newBlocks.forEach(b => {
+            flattened.push(...b.items);
+        });
+
+        const newDays = [...trainingDays];
+        newDays[dayIdx].exercises = flattened;
+        setTrainingDays(newDays);
+    };
+
+    // Reorder inside a superset (swap exercise order within biserie/triserie)
+    const moveInsideSuperset = (dayIdx: number, supersetId: string, fromInnerIdx: number, direction: 'up' | 'down') => {
+        const day = trainingDays[dayIdx];
+        if (!day) return;
+
+        const supersetItems = day.exercises.filter(pe => pe.supersetId === supersetId);
+        const toInnerIdx = direction === 'up' ? fromInnerIdx - 1 : fromInnerIdx + 1;
+        if (toInnerIdx < 0 || toInnerIdx >= supersetItems.length) return;
+
+        const reordered = [...supersetItems];
+        const [moved] = reordered.splice(fromInnerIdx, 1);
+        reordered.splice(toInnerIdx, 0, moved);
+
+        let reorderedCursor = 0;
+        const newExercises = day.exercises.map(pe => {
+            if (pe.supersetId === supersetId) {
+                const item = reordered[reorderedCursor];
+                reorderedCursor++;
+                return item;
+            }
+            return pe;
+        });
+
+        const newDays = [...trainingDays];
+        newDays[dayIdx].exercises = newExercises;
+        setTrainingDays(newDays);
+    };
+
+    // Prompt user to pick custom priority/position for a block using setOptionsPush
+    const promptMoveBlock = (dayIdx: number, blockIdx: number, totalBlocks: number, blockName: string) => {
+        const options: Array<{
+            text: string;
+            style?: 'default' | 'destructive' | 'cancel';
+            onPress: () => void;
+        }> = [];
+
+        if (blockIdx > 0) {
+            options.push({
+                text: '⭐ Mover al inicio de la rutina (#1)',
+                style: 'default',
+                onPress: () => {
+                    moveRoutineBlock(dayIdx, blockIdx, 'top');
+                    setOptionsPush(null);
+                    showToast.success(`"${blockName}" movido al inicio`);
+                }
+            });
+        }
+
+        for (let i = 0; i < totalBlocks; i++) {
+            if (i !== blockIdx) {
+                const posNum = i + 1;
+                const label = i === 0
+                    ? 'Posición #1 (Inicio de rutina)'
+                    : i === totalBlocks - 1
+                        ? `Posición #${posNum} (Final de rutina)`
+                        : `Posición #${posNum}`;
+                options.push({
+                    text: label,
+                    style: 'default',
+                    onPress: () => {
+                        moveRoutineBlock(dayIdx, blockIdx, i);
+                        setOptionsPush(null);
+                        showToast.success(`"${blockName}" movido a posición #${posNum}`);
+                    }
+                });
+            }
+        }
+
+        options.push({
+            text: 'Cancelar',
+            style: 'cancel',
+            onPress: () => setOptionsPush(null)
+        });
+
+        setOptionsPush({
+            title: 'Prioridad en la Rutina',
+            message: `¿En qué posición deseas colocar "${blockName}"? (Actualmente en #${blockIdx + 1})`,
+            options
+        });
+    };
+
     const renderStep1 = () => (
         <ScrollView
             style={styles.stepContent}
@@ -1673,13 +2108,14 @@ export default function PlanScreen() {
             {/* Target Selection */}
             {currentUser?.role === 'coach' && !implicitClient && (
                 <View style={styles.wizardSection}>
-                    <Text style={styles.stepLabel}>🎯 ¿Para quién es este plan?</Text>
+                    <Text style={styles.stepSectionHeader}>🎯 ¿Para quién es este plan?</Text>
                     <View style={styles.clientSelector}>
                         <TouchableOpacity
                             style={[styles.clientChip, !assignedClientId && styles.clientChipActive]}
                             onPress={() => setAssignedClientId(null)}
+                            activeOpacity={0.7}
                         >
-                            <User size={14} color={!assignedClientId ? '#000' : Colors.textMuted} />
+                            <User size={14} color={!assignedClientId ? '#FFFFFF' : '#94A3B8'} />
                             <Text style={[styles.clientChipText, !assignedClientId && styles.clientChipTextActive]}>Para mí</Text>
                         </TouchableOpacity>
 
@@ -1688,8 +2124,9 @@ export default function PlanScreen() {
                                 key={client.id}
                                 style={[styles.clientChip, assignedClientId === client.id && styles.clientChipActive]}
                                 onPress={() => setAssignedClientId(client.id)}
+                                activeOpacity={0.7}
                             >
-                                <Users size={14} color={assignedClientId === client.id ? '#000' : Colors.textMuted} />
+                                <Users size={14} color={assignedClientId === client.id ? '#FFFFFF' : '#94A3B8'} />
                                 <Text style={[styles.clientChipText, assignedClientId === client.id && styles.clientChipTextActive]}>
                                     {client.name?.split(' ')[0] || 'Cliente'}
                                 </Text>
@@ -1699,7 +2136,7 @@ export default function PlanScreen() {
                 </View>
             )}
 
-            <Text style={styles.stepLabel}>📅 Mes y Año</Text>
+            <Text style={styles.stepSectionHeader}>📅 Mes y Año</Text>
             <View style={styles.monthGrid}>
                 {MONTHS.map((m) => (
                     <TouchableOpacity
@@ -1708,6 +2145,7 @@ export default function PlanScreen() {
                             styles.monthChip,
                             selectedMonth === m && styles.monthChipActive,
                         ]}
+                        activeOpacity={0.7}
                         onPress={() => setSelectedMonth(m)}
                     >
                         <Text
@@ -1722,7 +2160,7 @@ export default function PlanScreen() {
                 ))}
             </View>
 
-            <Text style={[styles.stepLabel, { marginTop: Spacing.lg }]}>
+            <Text style={[styles.stepSectionHeader, { marginTop: 22 }]}>
                 🏋️ Días de Entrenamiento por Semana
             </Text>
             <View style={styles.daysRow}>
@@ -1733,6 +2171,7 @@ export default function PlanScreen() {
                             styles.dayBtn,
                             daysPerWeek === d && styles.dayBtnActive,
                         ]}
+                        activeOpacity={0.7}
                         onPress={() => setDaysPerWeek(d)}
                     >
                         <Text
@@ -1746,27 +2185,30 @@ export default function PlanScreen() {
                     </TouchableOpacity>
                 ))}
             </View>
-            <Text style={styles.daysHint}>
-                {daysPerWeek} día{daysPerWeek !== 1 ? 's' : ''} / semana · {selectedMonth} {selectedYear}
-            </Text>
+            <View style={styles.daysHintCard}>
+                <Text style={styles.daysHintText}>
+                    ⚡ {daysPerWeek} {daysPerWeek === 1 ? 'DÍA' : 'DÍAS'} POR SEMANA · {selectedMonth.toUpperCase()} {selectedYear}
+                </Text>
+            </View>
 
-            <Text style={[styles.stepLabel, { marginTop: Spacing.lg }]}>
+            <Text style={[styles.stepSectionHeader, { marginTop: 22 }]}>
                 📝 Comentario General del Plan (Opcional)
             </Text>
             <TextInput
-                style={{ backgroundColor: Colors.surface, color: Colors.text, borderRadius: 12, padding: 16, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginTop: 8 }}
-                placeholder="Ej. 'Fase de hipertrofia con énfasis en piernas...'"
-                placeholderTextColor={Colors.textMuted}
+                style={styles.planCommentInput}
+                placeholder="Ej. 'Fase de hipertrofia con énfasis en piernas y hombros...'"
+                placeholderTextColor="#64748B"
                 value={planComment}
                 onChangeText={setPlanComment}
                 multiline
             />
+            <View style={{ height: 24 }} />
         </ScrollView>
     );
 
     const renderStep2 = () => (
-        <View style={styles.stepContent}>
-            <Text style={styles.stepLabel}>⚡ Elige tu tipo de Split</Text>
+        <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+            <Text style={styles.stepSectionHeader}>⚡ Elige tu tipo de Split</Text>
             {SPLIT_TYPES.map((s) => (
                 <TouchableOpacity
                     key={s.type}
@@ -1778,7 +2220,9 @@ export default function PlanScreen() {
                     onPress={() => setSplitType(s.type)}
                 >
                     <View style={styles.splitCardHeader}>
-                        <Text style={styles.splitIcon}>{s.icon}</Text>
+                        <View style={[styles.splitIconBox, splitType === s.type && styles.splitIconBoxActive]}>
+                            <Text style={styles.splitIcon}>{s.icon}</Text>
+                        </View>
                         <Text
                             style={[
                                 styles.splitLabel,
@@ -1789,14 +2233,15 @@ export default function PlanScreen() {
                         </Text>
                         {splitType === s.type && (
                             <View style={styles.splitCheck}>
-                                <Check size={14} color="#000" />
+                                <Check size={14} color="#FFFFFF" strokeWidth={3} />
                             </View>
                         )}
                     </View>
                     <Text style={styles.splitDesc}>{s.description}</Text>
                 </TouchableOpacity>
             ))}
-        </View>
+            <View style={{ height: 24 }} />
+        </ScrollView>
     );
 
     const renderStep3 = () => (
@@ -1805,32 +2250,37 @@ export default function PlanScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
         >
-            <Text style={styles.stepLabel}>📋 Configura tus Días</Text>
+            <Text style={styles.stepSectionHeader}>📋 Configura tus Días</Text>
             {trainingDays.map((day, idx) => (
                 <View key={day.dayNumber} style={styles.configDayCard}>
-                    <Text style={styles.configDayTitle}>{day.label}</Text>
-                    {console.log(`DEBUG DAY ${day.dayNumber} MUSCLES:`, day.muscleGroups)}
+                    <View style={styles.configDayHeaderRow}>
+                        <View>
+                            <Text style={styles.configDayTag}>DÍA #{day.dayNumber}</Text>
+                            <Text style={styles.configDayTitle}>{day.label}</Text>
+                        </View>
+                    </View>
                     <View style={styles.configMuscleGrid}>
                         {muscleGroups.map((g: string) => {
                             const active = day.muscleGroups.some((mg: string) => mg.trim().toLowerCase() === g.trim().toLowerCase());
-                            const color = MuscleGroupColors[g] || Colors.primary;
+                            const color = MuscleGroupColors[g] || '#2563EB';
                             return (
                                 <View key={g} style={{ flexDirection: 'column', alignItems: 'center', marginBottom: 8, marginHorizontal: 4 }}>
                                     <TouchableOpacity
                                         style={[
                                             styles.configMuscleChip,
                                             active && {
-                                                backgroundColor: color + '22',
+                                                backgroundColor: color + '25',
                                                 borderColor: color,
                                             },
                                             { marginHorizontal: 0, marginBottom: 0 }
                                         ]}
+                                        activeOpacity={0.7}
                                         onPress={() => toggleMuscleGroup(idx, g)}
                                     >
                                         <Text
                                             style={[
                                                 styles.configMuscleText,
-                                                active && { color },
+                                                active && { color, fontWeight: '800' },
                                             ]}
                                         >
                                             {g}
@@ -1840,11 +2290,11 @@ export default function PlanScreen() {
                             );
                         })}
                     </View>
-                    <View style={{ marginTop: 12 }}>
+                    <View style={{ marginTop: 14 }}>
                         <TextInput
-                            style={{ backgroundColor: Colors.surface, color: Colors.text, borderRadius: 8, padding: 12, fontSize: 13, borderColor: Colors.surface_lowest, borderWidth: 1, minHeight: 60, textAlignVertical: 'top' }}
+                            style={styles.dayCommentInput}
                             placeholder="Comentario adicional para el día (opcional)..."
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor="#64748B"
                             value={day.comment || ''}
                             onChangeText={(val) => {
                                 setTrainingDays(prev => {
@@ -1858,6 +2308,7 @@ export default function PlanScreen() {
                     </View>
                 </View>
             ))}
+            <View style={{ height: 24 }} />
         </ScrollView>
     );
 
@@ -1868,17 +2319,17 @@ export default function PlanScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
         >
-            <Text style={styles.stepLabel}>💪 Elige Ejercicios por Día</Text>
+            <Text style={styles.stepSectionHeader}>💪 Elige Ejercicios por Día</Text>
 
             {/* Real-time volume tracking */}
             {Object.keys(currentVolumes).length > 0 && (
-                <View style={{ marginBottom: 16, backgroundColor: Colors.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: Colors.border }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textMuted, marginBottom: 10, textTransform: 'uppercase' }}>Volumen Total (Series de la semana)</Text>
+                <View style={styles.volumeCard}>
+                    <Text style={styles.volumeCardTitle}>VOLUMEN TOTAL (SERIES POR SEMANA)</Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                         {Object.entries(currentVolumes).map(([g, vol]) => (
-                            <View key={g} style={{ backgroundColor: (MuscleGroupColors[g] || Colors.primary) + '22', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                                <Text style={{ color: MuscleGroupColors[g] || Colors.primary, fontSize: 13, fontWeight: 'bold' }}>
-                                    {g}: {vol}
+                            <View key={g} style={[styles.volumeTag, { borderColor: (MuscleGroupColors[g] || '#2563EB') + '55' }]}>
+                                <Text style={{ color: MuscleGroupColors[g] || '#38BDF8', fontSize: 12, fontWeight: '800' }}>
+                                    {g}: <Text style={{ color: '#FFFFFF' }}>{vol}</Text>
                                 </Text>
                             </View>
                         ))}
@@ -1887,13 +2338,13 @@ export default function PlanScreen() {
             )}
 
             <Text style={styles.stepHint}>
-                Ajusta series y repeticiones manualmente
+                Ajusta series y repeticiones manualmente para cada movimiento
             </Text>
             {trainingDays.map((day, idx) => (
                 <View key={day.dayNumber} style={styles.exerciseDayCard}>
                     <View style={styles.exerciseDayHeader}>
                         <TouchableOpacity
-                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                             onPress={() => {
                                 setCollapsedDays(prev => {
                                     const next = new Set(prev);
@@ -1905,49 +2356,57 @@ export default function PlanScreen() {
                                     return next;
                                 });
                             }}
+                            activeOpacity={0.7}
                         >
                             <View style={{ flex: 1 }}>
+                                <Text style={styles.exerciseDayTag}>DÍA #{day.dayNumber}</Text>
                                 <Text style={styles.exerciseDayTitle}>{day.label}</Text>
                                 {day.muscleGroups && day.muscleGroups.length > 0 && (
-                                    <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '600', marginTop: 2 }}>
+                                    <Text style={styles.exerciseDayMuscles}>
                                         {day.muscleGroups.join(' • ')}
                                     </Text>
                                 )}
                             </View>
-                            {collapsedDays.has(day.dayNumber) ? <ChevronDown size={18} color={Colors.textMuted} /> : <ChevronUp size={18} color={Colors.textMuted} />}
+                            {collapsedDays.has(day.dayNumber) ? <ChevronDown size={18} color="#94A3B8" /> : <ChevronUp size={18} color="#94A3B8" />}
                         </TouchableOpacity>
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                             <TouchableOpacity
-                                style={[styles.addExerciseBtn, { backgroundColor: Colors.danger + '22', borderColor: Colors.danger, borderWidth: 1 }]}
+                                style={styles.deleteDayBtn}
                                 onPress={() => {
-                                    Alert.alert('Eliminar Día', '¿Seguro que deseas eliminar este día de entrenamiento?', [
-                                        { text: 'Cancelar', style: 'cancel' },
-                                        {
-                                            text: 'Eliminar', style: 'destructive', onPress: () => {
-                                                setTrainingDays(prev => {
-                                                    const newDays = prev.filter((_, i) => i !== idx).map((d, i) => ({ ...d, dayNumber: i + 1, label: `Día ${i + 1}` }));
-                                                    setDaysPerWeek(newDays.length);
-                                                    return newDays;
-                                                });
+                                    setOptionsPush({
+                                        title: 'Eliminar Día',
+                                        message: `¿Seguro que deseas eliminar ${day.label || 'este día'} de entrenamiento?`,
+                                        isDestructive: true,
+                                        options: [
+                                            {
+                                                text: 'Eliminar Día',
+                                                style: 'destructive',
+                                                onPress: () => {
+                                                    setTrainingDays(prev => {
+                                                        const newDays = prev.filter((_, i) => i !== idx).map((d, i) => ({ ...d, dayNumber: i + 1, label: `Día ${i + 1}` }));
+                                                        setDaysPerWeek(newDays.length);
+                                                        return newDays;
+                                                    });
+                                                    setOptionsPush(null);
+                                                }
+                                            },
+                                            {
+                                                text: 'Cancelar',
+                                                style: 'cancel',
+                                                onPress: () => setOptionsPush(null)
                                             }
-                                        }
-                                    ]);
+                                        ]
+                                    });
                                 }}
                             >
-                                <Trash2 size={14} color={Colors.danger} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.addExerciseBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
-                                onPress={() => setVoiceModalDayIdx(idx)}
-                            >
-                                <Mic size={14} color={Colors.primary} />
-                                <Text style={[styles.addExerciseBtnText, { color: Colors.primary }]}>Dictar</Text>
+                                <Trash2 size={14} color="#EF4444" />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.addExerciseBtn}
                                 onPress={() => setPickerDayIdx(idx)}
+                                activeOpacity={0.8}
                             >
-                                <Plus size={14} color="#000" />
+                                <Plus size={14} color="#FFFFFF" />
                                 <Text style={styles.addExerciseBtnText}>Añadir</Text>
                             </TouchableOpacity>
                         </View>
@@ -1958,179 +2417,417 @@ export default function PlanScreen() {
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -12, paddingHorizontal: 12, marginBottom: 12, marginTop: 4 }}>
                                 {muscleGroups.map((g: string) => {
                                     const active = day.muscleGroups.some((mg: string) => mg.trim().toLowerCase() === g.trim().toLowerCase());
-                                    const color = MuscleGroupColors[g] || Colors.primary;
+                                    const color = MuscleGroupColors[g] || '#2563EB';
                                     return (
                                         <TouchableOpacity
                                             key={g}
                                             style={[
                                                 styles.configMuscleChip,
                                                 active && {
-                                                    backgroundColor: color + '22',
+                                                    backgroundColor: color + '25',
                                                     borderColor: color,
                                                 },
                                                 { paddingVertical: 4, paddingHorizontal: 10, minWidth: 0, marginRight: 8, marginBottom: 0 }
                                             ]}
                                             onPress={() => toggleMuscleGroup(idx, g)}
                                         >
-                                            <Text style={[styles.configMuscleText, active && { color }, { fontSize: 11 }]}>{g}</Text>
+                                            <Text style={[styles.configMuscleText, active && { color, fontWeight: '800' }, { fontSize: 11 }]}>{g}</Text>
                                         </TouchableOpacity>
                                     );
                                 })}
                             </ScrollView>
 
+                            {/* Barra de Herramientas del Día: Sugerir orden por prioridad biomecánica */}
+                            {day.exercises.length > 1 && (
+                                <View style={styles.dayControlsBar}>
+                                    <TouchableOpacity
+                                        style={styles.dayControlBtn}
+                                        onPress={() => sortDayByPriority(idx)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <ArrowUpDown size={13} color="#38BDF8" />
+                                        <Text style={styles.dayControlBtnText}>Sugerir Orden Biomecánico</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
                             {day.exercises.length > 0 ? (
                                 <View style={styles.selectedExercisesList}>
-                                    {groupExercises(day.exercises).map((group, groupIdx) => {
-                                        const renderPe = (pe: PlannedExercise, isInsideGroup: boolean, indexInGroup: number, uniqueKey: string) => (
-                                            <View key={uniqueKey} style={[
-                                                styles.selectedExercise,
-                                                isInsideGroup && indexInGroup === 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 } : {},
-                                                isInsideGroup && indexInGroup > 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: 0, marginTop: 0 } : {}
-                                            ]}>
-                                                {/* Grouping Checkbox */}
-                                                {groupingDayIdx === idx && (
-                                                    <TouchableOpacity
-                                                        style={[styles.groupCheckboxPlan, selectedForGroup.includes(pe.exercise.id) && styles.groupCheckboxPlanActive]}
-                                                        onPress={() => setSelectedForGroup(prev =>
-                                                            prev.includes(pe.exercise.id)
-                                                                ? prev.filter(id => id !== pe.exercise.id)
-                                                                : [...prev, pe.exercise.id]
-                                                        )}
-                                                    >
-                                                        <View style={[styles.checkboxInner, selectedForGroup.includes(pe.exercise.id) && { backgroundColor: '#CCFF00' }]} />
-                                                    </TouchableOpacity>
-                                                )}
-
-                                                <View>
-                                                    <View style={styles.selExInfo}>
-                                                        <View
-                                                            style={[
-                                                                styles.selExDot,
-                                                                {
-                                                                    backgroundColor:
-                                                                        MuscleGroupColors[allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup && allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup !== 'Core' ? allExercises.find(e => e.id === pe.exercise.id)!.muscleGroup : pe.exercise.muscleGroup] || Colors.primary,
-                                                                },
-                                                            ]}
-                                                        />
-                                                        <Text style={styles.selExName} numberOfLines={1}>
-                                                            {pe.exercise.name}
-                                                        </Text>
-                                                        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                                                            <TouchableOpacity
-                                                                onPress={() => {
-                                                                    Alert.alert(
-                                                                        'Cambiar Ejercicio',
-                                                                        '¿Cómo deseas agregar el nuevo ejercicio?',
-                                                                        [
-                                                                            { text: 'Cancelar', style: 'cancel' },
-                                                                            {
-                                                                                text: 'Dictar por voz', onPress: () => {
-                                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
-                                                                                    setVoiceModalDayIdx(idx);
-                                                                                }
-                                                                            },
-                                                                            {
-                                                                                text: 'Elegir de la lista', onPress: () => {
-                                                                                    setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
-                                                                                    setPickerDayIdx(idx);
-                                                                                }
-                                                                            }
-                                                                        ]
-                                                                    );
-                                                                }}
-                                                                style={styles.changeExBtn}
-                                                            >
-                                                                <RefreshCw size={11} color={Colors.primary} style={{ marginRight: 4 }} />
-                                                                <Text style={styles.changeExBtnText}>Cambiar</Text>
-                                                            </TouchableOpacity>
-                                                            <TouchableOpacity
-                                                                onPress={() => toggleExercise(idx, pe.exercise)}
-                                                                style={styles.removeExBtn}
-                                                            >
-                                                                <Trash2 size={13} color={Colors.danger} />
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                    </View>
-
-                                                    <View style={styles.setsRepsRow}>
-                                                        <View style={styles.repsInputWrapper}>
-                                                            <Text style={styles.stepperLabel}>Series</Text>
-                                                            <TextInput
-                                                                style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                                value={pe.sets === '' ? '' : String(pe.sets)}
-                                                                onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'sets', val)}
-                                                                keyboardType="decimal-pad"
-                                                                placeholder="3"
-                                                                placeholderTextColor={Colors.textMuted}
-                                                            />
-                                                        </View>
-
-                                                        <View style={styles.repsRangeContainer}>
-                                                            <View style={styles.repsInputWrapper}>
-                                                                <Text style={styles.stepperLabel}>Min</Text>
-                                                                <TextInput
-                                                                    style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                                    value={pe.minReps === '' ? '' : String(pe.minReps)}
-                                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'minReps', val)}
-                                                                    keyboardType="decimal-pad"
-                                                                    placeholder="8"
-                                                                    placeholderTextColor={Colors.textMuted}
-                                                                />
-                                                            </View>
-                                                            <Text style={styles.rangeDash}>-</Text>
-                                                            <View style={styles.repsInputWrapper}>
-                                                                <Text style={styles.stepperLabel}>Max</Text>
-                                                                <TextInput
-                                                                    style={[styles.repsInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                                    value={pe.maxReps === '' ? '' : String(pe.maxReps)}
-                                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'maxReps', val)}
-                                                                    keyboardType="decimal-pad"
-                                                                    placeholder="12"
-                                                                    placeholderTextColor={Colors.textMuted}
-                                                                />
-                                                            </View>
-                                                        </View>
-                                                    </View>
-
-                                                    <TextInput
-                                                        style={[styles.instructionInput, { color: '#FFFFFF', borderColor: Colors.border }]}
-                                                        value={pe.instruction}
-                                                        onChangeText={(val) => updateInstruction(idx, pe.exercise.id, val)}
-                                                        placeholder="Instrucciones u objetivo (opcional)..."
-                                                        placeholderTextColor={Colors.textMuted}
-                                                        multiline
-                                                    />
-                                                </View>
-                                            </View>
-                                        );
-
-                                        if (group.isGroup) {
-                                            const groupColor = SUPERSET_COLORS[groupIdx % SUPERSET_COLORS.length];
-                                            const label = group.items.length >= 3 ? 'TRISERIE ' + (groupIdx + 1) : 'BISERIE ' + (groupIdx + 1);
+                                    {(() => {
+                                        const renderPe = (
+                                            pe: PlannedExercise,
+                                            isInsideGroup: boolean,
+                                            indexInGroup: number,
+                                            uniqueKey: string,
+                                            groupIdx: number,
+                                            totalBlocks: number,
+                                            supersetId?: string,
+                                            groupTotalItems?: number
+                                        ) => {
                                             return (
-                                                <View key={'group-' + group.id + '-' + groupIdx} style={[styles.supersetWrapperPlan, { borderLeftColor: groupColor }]}>
-                                                    <View style={[styles.supersetHeaderPlanNew, { backgroundColor: groupColor }]}>
-                                                        <Text style={styles.supersetLabelText}>{label}</Text>
-                                                        <TouchableOpacity onPress={() => {
-                                                            const newDays = [...trainingDays];
-                                                            newDays[idx].exercises = newDays[idx].exercises.map(ex => {
-                                                                if (ex.supersetId === group.id) {
-                                                                    return { ...ex, supersetId: undefined };
-                                                                }
-                                                                return ex;
-                                                            });
-                                                            setTrainingDays(newDays);
-                                                        }}>
-                                                            <Text style={styles.ungroupTextPlanSmall}>Desagrupar</Text>
+                                                <View key={uniqueKey} style={[
+                                                    styles.selectedExercise,
+                                                    isInsideGroup && indexInGroup === 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 } : {},
+                                                    isInsideGroup && indexInGroup > 0 ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: 0, marginTop: 0 } : {}
+                                                ]}>
+                                                    {/* Grouping Checkbox */}
+                                                    {groupingDayIdx === idx && (
+                                                        <TouchableOpacity
+                                                            style={[styles.groupCheckboxPlan, selectedForGroup.includes(pe.exercise.id) && styles.groupCheckboxPlanActive]}
+                                                            onPress={() => setSelectedForGroup(prev =>
+                                                                prev.includes(pe.exercise.id)
+                                                                    ? prev.filter(id => id !== pe.exercise.id)
+                                                                    : [...prev, pe.exercise.id]
+                                                            )}
+                                                        >
+                                                            <View style={[styles.checkboxInner, selectedForGroup.includes(pe.exercise.id) && { backgroundColor: '#2563EB' }]} />
                                                         </TouchableOpacity>
+                                                    )}
+
+                                                    <View>
+                                                        <View style={styles.selExInfo}>
+                                                            {/* Badge de prioridad/posición para ejercicio individual */}
+                                                            {!isInsideGroup && (
+                                                                <TouchableOpacity
+                                                                    style={styles.blockPosBadge}
+                                                                    onPress={() => promptMoveBlock(idx, groupIdx, totalBlocks, pe.exercise.name)}
+                                                                    activeOpacity={0.7}
+                                                                >
+                                                                    <Text style={styles.blockPosBadgeText}>#{groupIdx + 1}</Text>
+                                                                </TouchableOpacity>
+                                                            )}
+
+                                                            <View
+                                                                style={[
+                                                                    styles.selExDot,
+                                                                    {
+                                                                        backgroundColor:
+                                                                            MuscleGroupColors[allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup && allExercises.find(e => e.id === pe.exercise.id)?.muscleGroup !== 'Core' ? allExercises.find(e => e.id === pe.exercise.id)!.muscleGroup : pe.exercise.muscleGroup] || '#2563EB',
+                                                                    },
+                                                                ]}
+                                                            />
+                                                            <View style={{ flex: 1, justifyContent: 'center' }}>
+                                                                <Text style={styles.selExName} numberOfLines={1}>
+                                                                    {pe.exercise.name}
+                                                                </Text>
+                                                                <View style={styles.selExSubRow}>
+                                                                    {/* Badge de prioridad: Accesorio / Compuesto / Aislamiento */}
+                                                                    {(() => {
+                                                                        const prio = getExercisePriority(pe.exercise);
+                                                                        return (
+                                                                            <View style={[styles.prioBadgeSmall, { backgroundColor: prio.badgeColor + '18', borderColor: prio.badgeColor + '50', marginLeft: 0 }]}>
+                                                                                <Text style={[styles.prioBadgeSmallText, { color: prio.badgeColor }]}>{prio.tag}</Text>
+                                                                            </View>
+                                                                        );
+                                                                    })()}
+
+                                                                    {/* Si está dentro de biserie/triserie: flechas arriba/abajo dentro del grupo */}
+                                                                    {isInsideGroup && groupTotalItems !== undefined && groupTotalItems > 1 && (
+                                                                        <View style={styles.subRowArrows}>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => supersetId && moveInsideSuperset(idx, supersetId, indexInGroup, 'up')}
+                                                                                disabled={indexInGroup <= 0}
+                                                                                style={{ padding: 2, opacity: indexInGroup <= 0 ? 0.25 : 0.85 }}
+                                                                                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                            >
+                                                                                <ChevronUp size={14} color={mode === 'dark' ? '#94A3B8' : '#64748B'} />
+                                                                            </TouchableOpacity>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => supersetId && moveInsideSuperset(idx, supersetId, indexInGroup, 'down')}
+                                                                                disabled={indexInGroup >= groupTotalItems - 1}
+                                                                                style={{ padding: 2, opacity: indexInGroup >= groupTotalItems - 1 ? 0.25 : 0.85 }}
+                                                                                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                            >
+                                                                                <ChevronDown size={14} color={mode === 'dark' ? '#94A3B8' : '#64748B'} />
+                                                                            </TouchableOpacity>
+                                                                        </View>
+                                                                    )}
+
+                                                                    {/* Si es ejercicio individual: flechas arriba/abajo de bloque y botón "Al inicio" */}
+                                                                    {!isInsideGroup && groupingDayIdx !== idx && totalBlocks > 1 && (
+                                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                                            <View style={styles.subRowArrows}>
+                                                                                <TouchableOpacity
+                                                                                    onPress={() => moveRoutineBlock(idx, groupIdx, 'up')}
+                                                                                    disabled={groupIdx <= 0}
+                                                                                    style={{ padding: 2, opacity: groupIdx <= 0 ? 0.25 : 0.85 }}
+                                                                                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                                >
+                                                                                    <ChevronUp size={14} color={mode === 'dark' ? '#94A3B8' : '#64748B'} />
+                                                                                </TouchableOpacity>
+                                                                                <TouchableOpacity
+                                                                                    onPress={() => moveRoutineBlock(idx, groupIdx, 'down')}
+                                                                                    disabled={groupIdx >= totalBlocks - 1}
+                                                                                    style={{ padding: 2, opacity: groupIdx >= totalBlocks - 1 ? 0.25 : 0.85 }}
+                                                                                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                                >
+                                                                                    <ChevronDown size={14} color={mode === 'dark' ? '#94A3B8' : '#64748B'} />
+                                                                                </TouchableOpacity>
+                                                                            </View>
+
+                                                                            {groupIdx > 0 && (
+                                                                                <TouchableOpacity
+                                                                                    style={styles.blockMoveToTopBtnSingle}
+                                                                                    onPress={() => {
+                                                                                        moveRoutineBlock(idx, groupIdx, 'top');
+                                                                                        showToast.success(`"${pe.exercise.name}" movido al inicio`);
+                                                                                    }}
+                                                                                    activeOpacity={0.7}
+                                                                                >
+                                                                                    <ChevronsUp size={11} color={mode === 'dark' ? '#38BDF8' : '#2563EB'} />
+                                                                                    <Text style={styles.blockMoveToTopTextSingle}>Al inicio</Text>
+                                                                                </TouchableOpacity>
+                                                                            )}
+                                                                        </View>
+                                                                    )}
+                                                                </View>
+                                                            </View>
+
+                                                            <View style={[{ flexDirection: 'row', gap: 6, alignItems: 'center' }, groupingDayIdx === idx && { marginRight: 32 }]}>
+
+                                                                <TouchableOpacity
+                                                                    onPress={() => {
+                                                                        setOptionsPush({
+                                                                            title: 'Cambiar Ejercicio',
+                                                                            message: `¿Deseas reemplazar "${pe.exercise.name}" por otro ejercicio?`,
+                                                                            isDestructive: false,
+                                                                            options: [
+                                                                                {
+                                                                                    text: 'Elegir nuevo ejercicio',
+                                                                                    style: 'default',
+                                                                                    onPress: () => {
+                                                                                        setOptionsPush(null);
+                                                                                        setReplaceExerciseInfo({ dayIdx: idx, peId: pe.exercise.id });
+                                                                                        setPickerDayIdx(idx);
+                                                                                    }
+                                                                                },
+                                                                                {
+                                                                                    text: 'Cancelar',
+                                                                                    style: 'cancel',
+                                                                                    onPress: () => setOptionsPush(null)
+                                                                                }
+                                                                            ]
+                                                                        });
+                                                                    }}
+                                                                    style={styles.changeExBtn}
+                                                                >
+                                                                    <RefreshCw size={11} color="#38BDF8" style={{ marginRight: 4 }} />
+                                                                    <Text style={styles.changeExBtnText}>Cambiar</Text>
+                                                                </TouchableOpacity>
+                                                                {groupingDayIdx !== idx && (
+                                                                    <TouchableOpacity
+                                                                        onPress={() => {
+                                                                            setOptionsPush({
+                                                                                title: 'Eliminar Ejercicio',
+                                                                                message: `¿Estás seguro de que deseas eliminar "${pe.exercise.name}"?`,
+                                                                                isDestructive: true,
+                                                                                options: [
+                                                                                    {
+                                                                                        text: 'Eliminar Ejercicio',
+                                                                                        style: 'destructive',
+                                                                                        onPress: () => {
+                                                                                            toggleExercise(idx, pe.exercise);
+                                                                                            setOptionsPush(null);
+                                                                                        }
+                                                                                    },
+                                                                                    {
+                                                                                        text: 'Cancelar',
+                                                                                        style: 'cancel',
+                                                                                        onPress: () => setOptionsPush(null)
+                                                                                    }
+                                                                                ]
+                                                                            });
+                                                                        }}
+                                                                        style={styles.removeExBtn}
+                                                                    >
+                                                                        <Trash2 size={13} color="#EF4444" />
+                                                                    </TouchableOpacity>
+                                                                )}
+                                                            </View>
+                                                        </View>
+
+                                                        <View style={styles.setsRepsRow}>
+                                                            <View style={styles.repsInputWrapper}>
+                                                                <Text style={styles.stepperLabel}>SERIES</Text>
+                                                                <TextInput
+                                                                    style={styles.repsInput}
+                                                                    value={String(pe.sets ?? '')}
+                                                                    onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'sets', val)}
+                                                                    keyboardType="decimal-pad"
+                                                                    placeholder="3"
+                                                                    placeholderTextColor="#64748B"
+                                                                />
+                                                            </View>
+
+                                                            <View style={styles.repsRangeContainer}>
+                                                                <View style={styles.repsInputWrapper}>
+                                                                    <Text style={styles.stepperLabel}>MIN REPS</Text>
+                                                                    <TextInput
+                                                                        style={styles.repsInput}
+                                                                        value={String(pe.minReps ?? '')}
+                                                                        onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'minReps', val)}
+                                                                        keyboardType="decimal-pad"
+                                                                        placeholder="8"
+                                                                        placeholderTextColor="#64748B"
+                                                                    />
+                                                                </View>
+                                                                <Text style={styles.rangeDash}>-</Text>
+                                                                <View style={styles.repsInputWrapper}>
+                                                                    <Text style={styles.stepperLabel}>MAX REPS</Text>
+                                                                    <TextInput
+                                                                        style={styles.repsInput}
+                                                                        value={String(pe.maxReps ?? '')}
+                                                                        onChangeText={(val) => updateExNumField(idx, pe.exercise.id, 'maxReps', val)}
+                                                                        keyboardType="decimal-pad"
+                                                                        placeholder="12"
+                                                                        placeholderTextColor="#64748B"
+                                                                    />
+                                                                </View>
+                                                            </View>
+                                                        </View>
+
+                                                        <TextInput
+                                                            style={styles.instructionInput}
+                                                            value={pe.instruction}
+                                                            onChangeText={(val) => updateInstruction(idx, pe.exercise.id, val)}
+                                                            placeholder="Instrucciones u objetivo (opcional)..."
+                                                            placeholderTextColor="#64748B"
+                                                            multiline
+                                                        />
+
+                                                        {/* Video Link personalizado para este ejercicio en el plan */}
+                                                        <View style={styles.planVideoLinkContainer}>
+                                                            <Link2 size={15} color={pe.videoUrl ? '#38BDF8' : '#64748B'} />
+                                                            <TextInput
+                                                                style={styles.planVideoLinkInput}
+                                                                value={pe.videoUrl || ''}
+                                                                onChangeText={(val) => updateVideoUrl(idx, pe.exercise.id, val)}
+                                                                placeholder="Link de video (YouTube, Instagram...)"
+                                                                placeholderTextColor="#64748B"
+                                                                autoCapitalize="none"
+                                                                autoCorrect={false}
+                                                                keyboardType="url"
+                                                            />
+                                                            {!!pe.videoUrl && (
+                                                                <TouchableOpacity
+                                                                    onPress={() => updateVideoUrl(idx, pe.exercise.id, '')}
+                                                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                                                >
+                                                                    <X size={14} color="#94A3B8" />
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </View>
+
+                                                        {!!pe.videoUrl && isExternalVideoLink(pe.videoUrl) && isValidWebUrl(pe.videoUrl) && (
+                                                            <ExternalVideoCard
+                                                                url={pe.videoUrl}
+                                                                style={{ width: '100%', height: 140, borderRadius: 10, marginTop: 8 }}
+                                                            />
+                                                        )}
                                                     </View>
-                                                    {group.items.map((pe, i) => renderPe(pe, true, i, 'pe-' + group.id + '-' + pe.exercise.id + '-' + i))}
                                                 </View>
                                             );
-                                        } else {
-                                            return renderPe(group.items[0], false, 0, 'pe-single-' + group.items[0].exercise.id + '-' + groupIdx);
-                                        }
-                                    })}
+                                        };
+
+                                        const renderGroupItem = (
+                                            group: { isGroup: boolean; id: string; items: PlannedExercise[] },
+                                            groupIdx: number,
+                                            totalBlocks: number,
+                                            keyPrefix: string = ''
+                                        ) => {
+                                            if (group.isGroup) {
+                                                const groupColor = SUPERSET_COLORS[groupIdx % SUPERSET_COLORS.length];
+                                                const label = group.items.length >= 3 ? 'TRISERIE ' + (groupIdx + 1) : 'BISERIE ' + (groupIdx + 1);
+                                                return (
+                                                    <View key={keyPrefix + 'group-' + group.id + '-' + groupIdx} style={[styles.supersetWrapperPlan, { borderLeftColor: groupColor }]}>
+                                                        <View style={[styles.supersetHeaderPlanNew, { backgroundColor: groupColor }]}>
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                                                                {/* Badge de prioridad/posición para la biserie/triserie */}
+                                                                <TouchableOpacity
+                                                                    style={[styles.blockPosBadge, styles.blockPosBadgeSuperset]}
+                                                                    onPress={() => promptMoveBlock(idx, groupIdx, totalBlocks, label)}
+                                                                    activeOpacity={0.7}
+                                                                >
+                                                                    <Text style={[styles.blockPosBadgeText, styles.blockPosBadgeTextSuperset]}>#{groupIdx + 1}</Text>
+                                                                </TouchableOpacity>
+                                                                <Text style={styles.supersetLabelText}>{label}</Text>
+
+                                                                {/* Botón directo "Al inicio" para la biserie/triserie completa */}
+                                                                {groupIdx > 0 && (
+                                                                    <TouchableOpacity
+                                                                        style={styles.blockMoveToTopBtn}
+                                                                        onPress={() => {
+                                                                            moveRoutineBlock(idx, groupIdx, 'top');
+                                                                            showToast.success(`"${label}" movida al inicio`);
+                                                                        }}
+                                                                        activeOpacity={0.7}
+                                                                    >
+                                                                        <ChevronsUp size={12} color="#FFFFFF" />
+                                                                        <Text style={styles.blockMoveToTopText}>Al inicio</Text>
+                                                                    </TouchableOpacity>
+                                                                )}
+                                                            </View>
+
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                                {/* Flechas subir/bajar la agrupación completa */}
+                                                                {totalBlocks > 1 && (
+                                                                    <View style={styles.blockArrowsRow}>
+                                                                        <TouchableOpacity
+                                                                            onPress={() => moveRoutineBlock(idx, groupIdx, 'up')}
+                                                                            disabled={groupIdx <= 0}
+                                                                            style={[styles.blockArrowBtn, groupIdx <= 0 && { opacity: 0.25 }]}
+                                                                            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                        >
+                                                                            <ChevronUp size={16} color="#FFFFFF" />
+                                                                        </TouchableOpacity>
+                                                                        <TouchableOpacity
+                                                                            onPress={() => moveRoutineBlock(idx, groupIdx, 'down')}
+                                                                            disabled={groupIdx >= totalBlocks - 1}
+                                                                            style={[styles.blockArrowBtn, groupIdx >= totalBlocks - 1 && { opacity: 0.25 }]}
+                                                                            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                                                        >
+                                                                            <ChevronDown size={16} color="#FFFFFF" />
+                                                                        </TouchableOpacity>
+                                                                    </View>
+                                                                )}
+
+                                                                <TouchableOpacity onPress={() => {
+                                                                    const newDays = [...trainingDays];
+                                                                    newDays[idx].exercises = newDays[idx].exercises.map(ex => {
+                                                                        if (ex.supersetId === group.id) {
+                                                                            return { ...ex, supersetId: undefined };
+                                                                        }
+                                                                        return ex;
+                                                                    });
+                                                                    setTrainingDays(newDays);
+                                                                }}>
+                                                                    <Text style={styles.ungroupTextPlanSmall}>Desagrupar</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        </View>
+                                                        {group.items.map((pe, i) => (
+                                                            <React.Fragment key={keyPrefix + 'pe-' + group.id + '-' + pe.exercise.id + '-' + i}>
+                                                                {i > 0 && <View style={styles.exerciseSeparatorInGroup} />}
+                                                                {renderPe(pe, true, i, keyPrefix + 'pe-' + group.id + '-' + pe.exercise.id + '-' + i, groupIdx, totalBlocks, group.id, group.items.length)}
+                                                            </React.Fragment>
+                                                        ))}
+                                                    </View>
+                                                );
+                                            } else {
+                                                return (
+                                                    <React.Fragment key={keyPrefix + 'group-single-' + group.items[0].exercise.id + '-' + groupIdx}>
+                                                        {groupIdx > 0 && <View style={styles.exerciseSeparator} />}
+                                                        {renderPe(group.items[0], false, 0, keyPrefix + 'pe-single-' + group.items[0].exercise.id + '-' + groupIdx, groupIdx, totalBlocks)}
+                                                    </React.Fragment>
+                                                );
+                                            }
+                                        };
+
+                                        const blocks = groupExercises(day.exercises);
+                                        return blocks.map((group, groupIdx) =>
+                                            renderGroupItem(group, groupIdx, blocks.length)
+                                        );
+                                    })()}
                                 </View>
                             ) : day.muscleGroups.length > 0 ? (
                                 <Text style={styles.noExercisesText}>
@@ -2147,7 +2844,7 @@ export default function PlanScreen() {
                                                 <Text style={styles.cancelGroupText}>Cancelar</Text>
                                             </TouchableOpacity>
                                             <TouchableOpacity
-                                                style={[styles.confirmGroupBtn, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { backgroundColor: '#CCFF00' } : { backgroundColor: Colors.surfaceLight }]}
+                                                style={[styles.confirmGroupBtn, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { backgroundColor: '#2563EB' } : { backgroundColor: '#0D172E', borderWidth: 1, borderColor: '#1E293B' }]}
                                                 onPress={() => {
                                                     if (selectedForGroup.length < 2 || selectedForGroup.length > 3) {
                                                         Alert.alert('Aviso', 'Selecciona 2 (Biserie) o 3 (Triserie) ejercicios.');
@@ -2166,14 +2863,14 @@ export default function PlanScreen() {
                                                     setSelectedForGroup([]);
                                                 }}
                                             >
-                                                <Text style={[styles.confirmGroupText, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { color: '#000' } : { color: Colors.textMuted }]}>
+                                                <Text style={[styles.confirmGroupText, selectedForGroup.length >= 2 && selectedForGroup.length <= 3 ? { color: '#FFFFFF' } : { color: '#94A3B8' }]}>
                                                     Agrupar ({selectedForGroup.length})
                                                 </Text>
                                             </TouchableOpacity>
                                         </>
                                     ) : (
                                         <TouchableOpacity style={styles.startGroupBtn} onPress={() => { setGroupingDayIdx(idx); setSelectedForGroup([]); }}>
-                                            <Plus size={16} color={Colors.primary} />
+                                            <Plus size={16} color="#38BDF8" />
                                             <Text style={styles.startGroupText}>Crear Biserie / Triserie</Text>
                                         </TouchableOpacity>
                                     )}
@@ -2184,7 +2881,7 @@ export default function PlanScreen() {
                 </View>
             ))}
             <TouchableOpacity
-                style={[styles.addExerciseBtn, { alignSelf: 'center', marginVertical: 16 }]}
+                style={styles.addDayBtn}
                 onPress={() => {
                     setTrainingDays(prev => {
                         const newDays = [...prev, { dayNumber: prev.length + 1, label: `Día ${prev.length + 1}`, muscleGroups: [], targetVolumes: {}, exercises: [] }];
@@ -2192,9 +2889,10 @@ export default function PlanScreen() {
                         return newDays;
                     });
                 }}
+                activeOpacity={0.8}
             >
-                <Plus size={16} color="#000" />
-                <Text style={styles.addExerciseBtnText}>Añadir Día de Entrenamiento</Text>
+                <Plus size={16} color="#38BDF8" style={{ marginRight: 6 }} />
+                <Text style={styles.addDayBtnText}>Añadir Día de Entrenamiento</Text>
             </TouchableOpacity>
 
 
@@ -2207,30 +2905,37 @@ export default function PlanScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: Colors.background }]}
+            style={[styles.container, { backgroundColor: '#060B14' }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
         >
+            {/* Top Screen Header */}
+            <View style={styles.screenHeader}>
+                <View>
+                    <Text style={styles.screenTag}>GESTIÓN MENSUAL</Text>
+                    <Text style={styles.screenTitle}>Planes de Entrenamiento</Text>
+                </View>
+            </View>
 
             {/* Client Search & Filter Chips for Coach */}
             {isCoach && (
-                <View style={{ marginBottom: 4, marginTop: 8 }}>
+                <View style={{ marginBottom: 4, marginTop: 4 }}>
                     <View style={{ paddingHorizontal: Spacing.md, marginBottom: 10 }}>
                         <View style={{
                             flexDirection: 'row',
                             alignItems: 'center',
-                            backgroundColor: Colors.surface,
+                            backgroundColor: '#0D172E',
                             borderRadius: 14,
                             paddingHorizontal: 14,
                             height: 44,
                             borderWidth: 1,
-                            borderColor: Colors.border
+                            borderColor: '#1E293B'
                         }}>
-                            <Search size={18} color={Colors.textMuted} />
+                            <Search size={18} color="#64748B" />
                             <TextInput
-                                style={{ flex: 1, marginLeft: 10, color: Colors.text, fontSize: 14 }}
+                                style={{ flex: 1, marginLeft: 10, color: '#F8FAFC', fontSize: 14 }}
                                 placeholder="Buscar cliente por nombre..."
-                                placeholderTextColor={Colors.textMuted}
+                                placeholderTextColor="#64748B"
                                 value={clientSearchQuery}
                                 onChangeText={(text) => {
                                     setClientSearchQuery(text);
@@ -2239,7 +2944,7 @@ export default function PlanScreen() {
                             />
                             {clientSearchQuery.length > 0 && (
                                 <TouchableOpacity onPress={() => setClientSearchQuery('')}>
-                                    <X size={16} color={Colors.textMuted} />
+                                    <X size={16} color="#94A3B8" />
                                 </TouchableOpacity>
                             )}
                         </View>
@@ -2277,21 +2982,25 @@ export default function PlanScreen() {
                 <ScrollView
                     contentContainerStyle={styles.emptyContainer}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+                        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2563EB" colors={['#2563EB']} />
                     }
                 >
                     <View style={styles.emptyIconContainer}>
-                        <CalendarDays size={36} color={Colors.textMuted} />
+                        <CalendarDays size={36} color="#64748B" />
                     </View>
                     <Text style={styles.emptyText}>Sin planes todavía</Text>
                     <Text style={styles.emptySubtext}>
-                        {isCoach
-                            ? 'Crea el primer plan mensual para tus clientes'
-                            : 'Aún no tienes un plan asignado. Contacta a tu coach.'}
+                        {filterClientId && String(filterClientId) !== String(currentUser?.id)
+                            ? `Aún no hay planes creados para ${clients.find(c => String(c.id) === String(filterClientId))?.name || 'este cliente'}. Toca "Crear Plan" para asignarle su primer plan.`
+                            : isCoach
+                                ? 'Crea el primer plan mensual para tus clientes'
+                                : isIndependent
+                                    ? 'Crea tu primer plan mensual de entrenamiento'
+                                    : 'Aún no tienes un plan asignado. Contacta a tu coach.'}
                     </Text>
-                    {isCoach && (
+                    {canManagePlans && (
                         <TouchableOpacity style={styles.emptyCta} onPress={openWizard}>
-                            <Plus size={16} color="#000" />
+                            <Plus size={16} color="#FFFFFF" />
                             <Text style={styles.emptyCtaText}>Crear Plan</Text>
                         </TouchableOpacity>
                     )}
@@ -2303,22 +3012,22 @@ export default function PlanScreen() {
                     contentContainerStyle={styles.plansList}
                     keyboardShouldPersistTaps="handled"
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+                        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2563EB" colors={['#2563EB']} />
                     }
                     renderItem={({ item }) => (
-                        <PlanCard plan={item} onDelete={deletePlan} onSaveLog={saveLog} onEdit={openEditWizard} />
+                        <PlanCard plan={item} onDelete={deletePlan} onSaveLog={saveLog} onEdit={openEditWizard} onDuplicate={handleDuplicatePlan} />
                     )}
                 />
             )}
 
             {/* FAB - Create Plan */}
-            {isCoach && (
+            {canManagePlans && (
                 <TouchableOpacity
                     style={styles.fab}
                     onPress={openWizard}
                     activeOpacity={0.85}
                 >
-                    <Plus size={24} color="#000" />
+                    <Plus size={24} color="#FFFFFF" />
                 </TouchableOpacity>
             )}
 
@@ -2338,7 +3047,7 @@ export default function PlanScreen() {
                                 <Text style={styles.wizardStep}>Paso {step} de 4</Text>
                             </View>
                             <TouchableOpacity style={styles.wizardClose} onPress={closeWizard}>
-                                <X size={18} color={Colors.textMuted} />
+                                <X size={18} color="#94A3B8" />
                             </TouchableOpacity>
                         </View>
 
@@ -2356,7 +3065,7 @@ export default function PlanScreen() {
                         <View style={styles.wizardFooter}>
                             {step > 1 ? (
                                 <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-                                    <ArrowLeft size={16} color={Colors.text} />
+                                    <ArrowLeft size={16} color="#94A3B8" />
                                     <Text style={styles.backBtnText}>Atrás</Text>
                                 </TouchableOpacity>
                             ) : (
@@ -2365,16 +3074,74 @@ export default function PlanScreen() {
                             {step < 4 ? (
                                 <TouchableOpacity style={styles.nextBtn} onPress={goNext}>
                                     <Text style={styles.nextBtnText}>Siguiente</Text>
-                                    <ArrowRight size={16} color="#000" />
+                                    <ArrowRight size={16} color="#FFFFFF" />
                                 </TouchableOpacity>
                             ) : (
                                 <TouchableOpacity style={styles.nextBtn} onPress={createPlan}>
-                                    <Check size={16} color="#000" />
+                                    <Check size={16} color="#FFFFFF" strokeWidth={2.5} />
                                     <Text style={styles.nextBtnText}>{editingPlanId ? 'Actualizar Plan' : 'Guardar Plan'}</Text>
                                 </TouchableOpacity>
                             )}
                         </View>
                     </KeyboardAvoidingView>
+
+                    {/* Options Push Bottom Sheet */}
+                    {optionsPush && (
+                        <View style={styles.optionsPushBackdrop}>
+                            <TouchableOpacity
+                                style={StyleSheet.absoluteFill}
+                                activeOpacity={1}
+                                onPress={() => setOptionsPush(null)}
+                            />
+                            <View style={styles.optionsPushCard}>
+                                <View style={styles.optionsPushHandle} />
+                                <View style={styles.optionsPushHeader}>
+                                    <View style={[styles.optionsPushIconWrap, optionsPush.isDestructive && styles.optionsPushIconWrapDestructive]}>
+                                        {optionsPush.isDestructive ? (
+                                            <Trash2 size={22} color={Colors.danger} />
+                                        ) : (
+                                            <RefreshCw size={22} color={Colors.primary} />
+                                        )}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.optionsPushTitle}>{optionsPush.title}</Text>
+                                        <Text style={styles.optionsPushMessage}>{optionsPush.message}</Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.optionsPushActions}>
+                                    {optionsPush.options.map((opt, i) => {
+                                        const isDestructive = opt.style === 'destructive';
+                                        const isCancel = opt.style === 'cancel';
+                                        return (
+                                            <TouchableOpacity
+                                                key={i}
+                                                style={[
+                                                    styles.optionsPushBtn,
+                                                    isDestructive && styles.optionsPushBtnDestructive,
+                                                    isCancel && styles.optionsPushBtnCancel,
+                                                    !isDestructive && !isCancel && styles.optionsPushBtnPrimary,
+                                                ]}
+                                                onPress={opt.onPress}
+                                                activeOpacity={0.8}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.optionsPushBtnText,
+                                                        isDestructive && styles.optionsPushBtnTextDestructive,
+                                                        isCancel && styles.optionsPushBtnTextCancel,
+                                                        !isDestructive && !isCancel && styles.optionsPushBtnTextPrimary,
+                                                    ]}
+                                                >
+                                                    {opt.text}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        </View>
+                    )}
                 </View>
             </Modal>
 
@@ -2437,14 +3204,33 @@ export default function PlanScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.background,
+    },
+    screenHeader: {
+        paddingHorizontal: Spacing.md,
+        paddingTop: 10,
+        paddingBottom: 6,
+    },
+    screenTag: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    screenTitle: {
+        fontSize: 26,
+        fontWeight: '900',
+        color: colors.text,
+        letterSpacing: 0.2,
+        marginTop: 2,
     },
     clientFilterRow: {
-        maxHeight: 46,
-        marginBottom: 6,
+        maxHeight: 48,
+        marginBottom: 8,
     },
     clientFilterContent: {
         paddingHorizontal: Spacing.md,
@@ -2455,24 +3241,29 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
-        backgroundColor: Colors.surface,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         minWidth: 70,
         alignItems: 'center',
         justifyContent: 'center',
     },
     clientChipActive: {
-        backgroundColor: Colors.primary + '20',
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.35,
+        shadowRadius: 6,
+        elevation: 4,
     },
     clientChipText: {
-        color: Colors.textMuted,
-        fontSize: 14,
-        fontWeight: '600',
+        color: colors.textMuted,
+        fontSize: 13,
+        fontWeight: '700',
     },
     clientChipTextActive: {
-        color: Colors.primary,
+        color: '#FFFFFF',
         fontWeight: '800',
     },
     header: {
@@ -2486,13 +3277,13 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
     },
     title: {
-        color: Colors.text,
-        fontSize: 32,
-        fontWeight: '800',
+        color: colors.text,
+        fontSize: 28,
+        fontWeight: '900',
         letterSpacing: -0.5,
     },
     subtitle: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         marginTop: 4,
     },
@@ -2500,25 +3291,25 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: 'rgba(191, 255, 10, 0.1)',
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(191, 255, 10, 0.2)',
+        borderColor: 'rgba(37, 99, 235, 0.3)',
     },
     filterBanner: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(191, 255, 10, 0.08)',
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         marginHorizontal: Spacing.md,
         marginTop: Spacing.sm,
         marginBottom: Spacing.xs,
-        paddingHorizontal: 12,
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        borderRadius: borderRadius.md,
+        borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(191, 255, 10, 0.25)',
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     filterBannerTextWrap: {
         flexDirection: 'row',
@@ -2527,19 +3318,19 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     filterBannerText: {
-        color: Colors.text,
-        fontSize: 18,
-        fontWeight: '500',
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '600',
     },
     filterName: {
-        color: Colors.primary,
-        fontWeight: '700',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontWeight: '800',
     },
     clearFilterBtn: {
         width: 24,
         height: 24,
         borderRadius: 12,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? '#1E293B' : colors.surface_container_low || '#E2E8F0',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -2550,18 +3341,18 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: Colors.cardBg,
-        paddingHorizontal: 12,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        borderRadius: borderRadius.md,
+        borderRadius: 14,
         borderWidth: 1,
-        borderColor: Colors.primary + '40',
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         alignSelf: 'flex-start',
     },
     implicitClientName: {
-        color: Colors.text,
-        fontSize: 16,
-        fontWeight: '700',
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '800',
     },
 
     // ── Empty State ───────────────────────────────────────────────────────
@@ -2572,40 +3363,47 @@ const styles = StyleSheet.create({
         paddingBottom: 80,
     },
     emptyIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: Colors.cardBg,
+        width: 76,
+        height: 76,
+        borderRadius: 38,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: Spacing.md,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     emptyText: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 18,
-        fontWeight: '700',
+        fontWeight: '800',
     },
     emptySubtext: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         marginTop: 6,
         marginBottom: Spacing.lg,
+        textAlign: 'center',
     },
     emptyCta: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderRadius: borderRadius.lg,
+        gap: 8,
+        backgroundColor: '#2563EB',
+        paddingHorizontal: 22,
+        paddingVertical: 13,
+        borderRadius: 14,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+        elevation: 6,
     },
     emptyCtaText: {
-        color: '#000',
-        fontSize: 18,
-        fontWeight: '700',
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+        letterSpacing: 0.3,
     },
 
     // ── Plans List ────────────────────────────────────────────────────────
@@ -2614,18 +3412,18 @@ const styles = StyleSheet.create({
         paddingBottom: 100,
     },
     planCard: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.lg,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderRadius: 18,
         borderWidth: 1,
-        borderColor: Colors.border,
-        marginBottom: 10,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        marginBottom: 14,
         overflow: 'hidden',
     },
     planCardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: Spacing.md,
+        padding: 16,
     },
     planCardLeft: {
         flexDirection: 'row',
@@ -2634,134 +3432,168 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     planMonthBadge: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: 'rgba(191, 255, 10, 0.1)',
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.surface_container_low || '#F1F5F9',
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(37, 99, 235, 0.3)',
     },
     planCardTitle: {
-        color: Colors.text,
-        fontSize: 16,
-        fontWeight: '700',
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: '800',
+        letterSpacing: 0.2,
     },
     planCardSub: {
-        color: Colors.textMuted,
-        fontSize: 12,
-        marginTop: 2,
+        color: colors.textMuted,
+        fontSize: 13,
+        fontWeight: '600',
+        marginTop: 3,
     },
     planCardRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 8,
+    },
+    copyBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(168, 85, 247, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(168, 85, 247, 0.35)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     deleteBtn: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: 'rgba(255, 69, 58, 0.12)',
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.35)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     editBtn: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: Colors.primary + '18',
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(37, 99, 235, 0.35)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     planCardBody: {
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm,
+        borderTopColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.surface_container_low || '#F1F5F9',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
     },
     dayRow: {
-        paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        padding: 14,
+        marginBottom: 10,
     },
     dayLabel: {
-        color: Colors.text,
-        fontSize: 14,
-        fontWeight: '600',
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '800',
         marginBottom: 4,
     },
     dayMuscles: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 4,
+        gap: 6,
+        marginTop: 4,
     },
     miniChip: {
         paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: borderRadius.full,
+        paddingVertical: 3,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     miniChipText: {
         fontSize: 10,
-        fontWeight: '600',
+        fontWeight: '800',
     },
     dayExercises: {
-        marginTop: 6,
+        marginTop: 8,
+        gap: 3,
     },
     dayExerciseText: {
-        color: Colors.textMuted,
+        color: colors.text,
         fontSize: 12,
         lineHeight: 18,
+        fontWeight: '500',
     },
     setsRepsInline: {
-        color: Colors.primary,
-        fontWeight: '600',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontWeight: '800',
     },
 
     // ── Wizard Modal ──────────────────────────────────────────────────────
     wizardOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         justifyContent: 'flex-end',
     },
     wizardContent: {
-        backgroundColor: Colors.surface,
-        borderTopLeftRadius: borderRadius.xl,
-        borderTopRightRadius: borderRadius.xl,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.background,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         maxHeight: '100%',
         height: '100%',
-        paddingTop: Platform.OS === 'ios' ? 40 : 10,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        paddingTop: Platform.OS === 'ios' ? 44 : 12,
     },
     wizardHandle: {
-        width: 36,
+        width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: mode === 'dark' ? '#334155' : colors.border,
         alignSelf: 'center',
-        marginTop: Spacing.sm,
-        marginBottom: Spacing.sm,
+        marginTop: 4,
+        marginBottom: 12,
     },
     wizardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        paddingHorizontal: Spacing.md,
-        marginBottom: Spacing.sm,
+        paddingHorizontal: 18,
+        marginBottom: 14,
     },
     wizardTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 22,
-        fontWeight: '800',
-        letterSpacing: -0.3,
+        fontWeight: '900',
+        letterSpacing: 0.2,
     },
     wizardStep: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
         marginTop: 2,
     },
     wizardClose: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: Colors.surfaceLight,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -2770,56 +3602,70 @@ const styles = StyleSheet.create({
     stepIndicator: {
         flexDirection: 'row',
         justifyContent: 'center',
-        gap: 6,
-        marginBottom: Spacing.md,
-        paddingHorizontal: Spacing.md,
+        gap: 8,
+        marginBottom: 18,
+        paddingHorizontal: 18,
     },
     stepDot: {
         flex: 1,
-        height: 3,
+        height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     stepDotActive: {
-        backgroundColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.6,
+        shadowRadius: 4,
+        elevation: 3,
     },
     stepDotDone: {
-        backgroundColor: 'rgba(191, 255, 10, 0.35)',
+        backgroundColor: '#3B82F6',
     },
 
     // ── Wizard Body ───────────────────────────────────────────────────────
     wizardBody: {
         flex: 1,
-        paddingHorizontal: Spacing.md,
+        paddingHorizontal: 16,
     },
     readOnlyBadge: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 6,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
     },
     readOnlyText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: '800',
         textTransform: 'uppercase',
     },
     stepContent: {
         flex: 1,
     },
     stepLabel: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 16,
-        fontWeight: '700',
-        marginBottom: Spacing.md,
+        fontWeight: '800',
+        marginBottom: 14,
     },
     stepHint: {
-        color: Colors.textMuted,
-        fontSize: 12,
-        marginBottom: Spacing.md,
-        marginTop: -8,
+        color: colors.textMuted,
+        fontSize: 13,
+        marginBottom: 14,
+        marginTop: -4,
+        fontWeight: '500',
+    },
+    stepSectionHeader: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: colors.textMuted,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+        marginBottom: 10,
     },
 
     // ── Step 1: Month + Days ──────────────────────────────────────────────
@@ -2829,241 +3675,413 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     monthChip: {
-        width: '30%',
-        paddingVertical: 10,
-        borderRadius: borderRadius.md,
-        backgroundColor: Colors.cardBg,
+        width: '23%',
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     monthChipActive: {
-        backgroundColor: 'rgba(191, 255, 10, 0.12)',
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+        elevation: 4,
     },
     monthChipText: {
-        color: Colors.textMuted,
-        fontSize: 14,
-        fontWeight: '600',
+        color: colors.textMuted,
+        fontSize: 13,
+        fontWeight: '700',
     },
     monthChipTextActive: {
-        color: Colors.primary,
+        color: '#FFFFFF',
+        fontWeight: '900',
     },
     daysRow: {
         flexDirection: 'row',
         gap: 8,
+        justifyContent: 'space-between',
     },
     dayBtn: {
         flex: 1,
-        aspectRatio: 1,
-        borderRadius: borderRadius.md,
-        backgroundColor: Colors.cardBg,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
-        maxWidth: 46,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     dayBtnActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+        elevation: 4,
     },
     dayBtnText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: '800',
     },
     dayBtnTextActive: {
-        color: '#000',
+        color: '#FFFFFF',
+        fontWeight: '900',
     },
     daysHint: {
-        color: Colors.textMuted,
-        fontSize: 18,
-        marginTop: Spacing.md,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 13,
+        fontWeight: '700',
+        marginTop: 14,
         textAlign: 'center',
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+    },
+    daysHintCard: {
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginTop: 14,
+        alignItems: 'center',
+    },
+    daysHintText: {
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
+        fontWeight: '800',
+        letterSpacing: 0.6,
+    },
+    planCommentInput: {
+        backgroundColor: mode === 'dark' ? '#080E1A' : '#FFFFFF',
+        color: colors.text,
+        borderRadius: 14,
+        padding: 14,
+        fontSize: 14,
+        minHeight: 85,
+        textAlignVertical: 'top',
+        marginTop: 8,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
 
     // ── Step 2: Split Type ────────────────────────────────────────────────
     splitCard: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.lg,
-        padding: Spacing.md,
-        marginBottom: 10,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderRadius: 18,
+        padding: 16,
+        marginBottom: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     splitCardActive: {
-        borderColor: Colors.primary,
-        backgroundColor: 'rgba(191, 255, 10, 0.06)',
+        borderColor: '#2563EB',
+        backgroundColor: mode === 'dark' ? '#0F1E3D' : '#EFF6FF',
+        borderWidth: 1.5,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+        elevation: 6,
     },
     splitCardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 6,
+        gap: 12,
+        marginBottom: 8,
+    },
+    splitIconBox: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    splitIconBoxActive: {
+        borderColor: '#2563EB',
+        backgroundColor: mode === 'dark' ? '#132144' : '#DBEAFE',
     },
     splitIcon: {
         fontSize: 20,
     },
     splitLabel: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: '800',
         flex: 1,
     },
     splitLabelActive: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
     },
     splitCheck: {
         width: 24,
         height: 24,
         borderRadius: 12,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#2563EB',
         justifyContent: 'center',
         alignItems: 'center',
     },
     splitDesc: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 13,
         lineHeight: 18,
-        paddingLeft: 28,
+        paddingLeft: 52,
     },
 
     // ── Step 3: Configure Days ────────────────────────────────────────────
     configDayCard: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.lg,
-        padding: Spacing.md,
-        marginBottom: 10,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderRadius: 18,
+        padding: 18,
+        marginBottom: 14,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+    },
+    configDayHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    configDayTag: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+        marginBottom: 2,
     },
     configDayTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 18,
-        fontWeight: '700',
-        marginBottom: Spacing.sm,
+        fontWeight: '800',
     },
     configMuscleGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 6,
+        gap: 8,
     },
     configMuscleChip: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: borderRadius.full,
-        backgroundColor: Colors.surfaceLight,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     configMuscleText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '700',
+    },
+    dayCommentInput: {
+        backgroundColor: mode === 'dark' ? '#080E1A' : '#FFFFFF',
+        color: colors.text,
+        borderRadius: 12,
+        padding: 12,
+        fontSize: 13,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        borderWidth: 1,
+        minHeight: 60,
+        textAlignVertical: 'top',
     },
     volumeInput: {
         borderWidth: 1,
-        borderRadius: borderRadius.md,
+        borderRadius: 8,
         paddingHorizontal: 8,
         paddingVertical: 4,
         marginTop: 4,
         width: 60,
         textAlign: 'center',
         fontSize: 12,
+        backgroundColor: mode === 'dark' ? '#080F1E' : '#FFFFFF',
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
     },
 
     // ── Step 4: Select Exercises ──────────────────────────────────────────
-    exerciseDayCard: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.lg,
-        padding: Spacing.md,
-        marginBottom: 10,
+    volumeCard: {
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        padding: 16,
+        borderRadius: 18,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        marginBottom: 16,
+    },
+    volumeCardTitle: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: colors.textMuted,
+        marginBottom: 10,
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+    },
+    volumeTag: {
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    exerciseDayCard: {
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderRadius: 18,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     exerciseDayHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 12,
+    },
+    exerciseDayTag: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+        marginBottom: 2,
     },
     exerciseDayTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 18,
-        fontWeight: '700',
+        fontWeight: '800',
+    },
+    exerciseDayMuscles: {
+        fontSize: 12,
+        color: colors.textMuted,
+        fontWeight: '600',
+        marginTop: 2,
+    },
+    deleteDayBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.35)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     addExerciseBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: borderRadius.full,
+        gap: 6,
+        backgroundColor: '#2563EB',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 10,
     },
     addExerciseBtnText: {
-        color: '#000',
-        fontSize: 12,
-        fontWeight: '700',
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '800',
     },
     noMusclesText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 12,
         fontStyle: 'italic',
     },
     noExercisesText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 12,
         marginTop: 4,
     },
     selectedExercisesList: {
-        gap: 8,
+        gap: 10,
+    },
+    exerciseSeparator: {
+        height: 2,
+        backgroundColor: '#2563EB',
+        marginVertical: 6,
+        borderRadius: 1,
+    },
+    exerciseSeparatorInGroup: {
+        height: 2,
+        backgroundColor: '#2563EB',
+        marginVertical: 4,
+        borderRadius: 1,
+        opacity: 0.6,
     },
     selectedExercise: {
-        backgroundColor: Colors.surfaceLight,
-        borderRadius: borderRadius.md,
-        padding: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F8FAFC',
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        padding: 14,
     },
     selExInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 6,
+        gap: 10,
+        marginBottom: 12,
     },
     selExDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
     selExName: {
-        flex: 1,
-        color: Colors.text,
-        fontSize: 18,
-        fontWeight: '600',
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    selExSubRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 4,
+    },
+    subRowArrows: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 1,
+        backgroundColor: mode === 'dark' ? '#0F172A' : '#F1F5F9',
+        borderRadius: 6,
+        paddingHorizontal: 3,
+        paddingVertical: 1,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : '#E2E8F0',
     },
     changeExBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.primary + '18',
+        backgroundColor: mode === 'dark' ? '#132144' : '#EFF6FF',
         borderWidth: 1,
-        borderColor: Colors.primary + '35',
+        borderColor: mode === 'dark' ? '#1E293B' : '#BFDBFE',
         paddingHorizontal: 10,
-        paddingVertical: 5,
+        paddingVertical: 6,
         borderRadius: 8,
     },
     changeExBtnText: {
         fontSize: 11,
-        color: Colors.primary,
-        fontWeight: '600',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontWeight: '700',
     },
     removeExBtn: {
-        width: 28,
-        height: 28,
+        width: 30,
+        height: 30,
         borderRadius: 8,
-        backgroundColor: Colors.danger + '18',
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
         borderWidth: 1,
-        borderColor: Colors.danger + '35',
+        borderColor: 'rgba(239, 68, 68, 0.35)',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -3072,11 +4090,12 @@ const styles = StyleSheet.create({
     setsRepsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         gap: 12,
+        marginBottom: 10,
     },
     setsRepsSep: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 16,
         fontWeight: '700',
     },
@@ -3084,9 +4103,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     stepperLabel: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 10,
-        fontWeight: '600',
+        fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 4,
@@ -3100,21 +4119,94 @@ const styles = StyleSheet.create({
         width: 28,
         height: 28,
         borderRadius: 8,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface_container_low || '#E2E8F0',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     stepperBtnDisabled: {
         opacity: 0.4,
     },
     stepperValue: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
         fontSize: 18,
         fontWeight: '800',
         minWidth: 28,
         textAlign: 'center',
+    },
+    repsInputWrapper: {
+        width: 72,
+        gap: 4,
+    },
+    repsRangeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    rangeDash: {
+        color: colors.textMuted,
+        fontSize: 16,
+        fontWeight: '800',
+        marginTop: 18,
+    },
+    repsInput: {
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+        color: colors.text,
+        borderRadius: 8,
+        height: 40,
+        fontSize: 15,
+        fontWeight: '800',
+        textAlign: 'center',
+    },
+    instructionInput: {
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+        color: colors.text,
+        borderRadius: 10,
+        padding: 10,
+        marginTop: 4,
+        minHeight: 52,
+        fontSize: 13,
+        textAlignVertical: 'top',
+    },
+    planVideoLinkContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        marginTop: 8,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+    },
+    planVideoLinkInput: {
+        flex: 1,
+        color: colors.text,
+        fontSize: 13,
+        paddingVertical: 6,
+    },
+    addDayBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'center',
+        marginVertical: 16,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        borderRadius: 14,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+    },
+    addDayBtnText: {
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 14,
+        fontWeight: '700',
     },
 
     // ── Wizard Footer ─────────────────────────────────────────────────────
@@ -3122,68 +4214,79 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
+        paddingHorizontal: 18,
+        paddingVertical: 14,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.surface,
     },
     backBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: borderRadius.lg,
-        backgroundColor: Colors.surfaceLight,
+        paddingVertical: 12,
+        paddingHorizontal: 18,
+        borderRadius: 14,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface_container_low || '#E2E8F0',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     backBtnText: {
-        color: Colors.text,
+        color: colors.textMuted,
         fontSize: 14,
-        fontWeight: '600',
+        fontWeight: '700',
     },
     nextBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: borderRadius.lg,
-        backgroundColor: Colors.primary,
+        gap: 8,
+        paddingVertical: 13,
+        paddingHorizontal: 24,
+        borderRadius: 14,
+        backgroundColor: '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 6,
     },
     nextBtnText: {
-        color: '#000',
-        fontSize: 14,
-        fontWeight: '700',
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+        letterSpacing: 0.5,
     },
 
     // ── Exercise Picker Modal ─────────────────────────────────────────────
     pickerOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
+        backgroundColor: 'rgba(0,0,0,0.85)',
         justifyContent: 'flex-end',
     },
     pickerContent: {
-        backgroundColor: Colors.surface,
-        borderTopLeftRadius: borderRadius.xl,
-        borderTopRightRadius: borderRadius.xl,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         maxHeight: '85%',
         minHeight: '60%',
-        paddingTop: Spacing.sm,
+        paddingTop: 12,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     pickerHandle: {
-        width: 36,
+        width: 44,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: mode === 'dark' ? '#334155' : colors.border,
         alignSelf: 'center',
-        marginBottom: Spacing.md,
+        marginBottom: 14,
     },
     pickerHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: Spacing.md,
-        marginBottom: Spacing.sm,
+        paddingHorizontal: 18,
+        marginBottom: 12,
     },
     pickerHeaderRight: {
         flexDirection: 'row',
@@ -3191,82 +4294,131 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     pickerTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 18,
         fontWeight: '800',
+        letterSpacing: 0.3,
     },
     pickerNewBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: borderRadius.full,
+        gap: 5,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 20,
         borderWidth: 1,
-        borderColor: 'rgba(191, 255, 10, 0.25)',
-        backgroundColor: 'rgba(191, 255, 10, 0.08)',
+        borderColor: 'rgba(37, 99, 235, 0.4)',
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
     },
     pickerNewBtnText: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '700',
     },
     pickerClose: {
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#E2E8F0',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    pickerSearchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        paddingHorizontal: 14,
+        marginHorizontal: 16,
+        marginBottom: 12,
+        height: 46,
+    },
+    pickerSearchIcon: {
+        marginRight: 8,
+    },
+    pickerSearchInput: {
+        flex: 1,
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '500',
+        paddingVertical: 0,
+    },
+    pickerEmptyContainer: {
+        flex: 1,
+        padding: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    pickerEmptyText: {
+        color: colors.textMuted,
+        fontSize: 14,
+        fontStyle: 'italic',
+    },
     pickerFilters: {
-        paddingHorizontal: Spacing.md,
-        marginBottom: Spacing.sm,
-        maxHeight: 40,
+        marginBottom: 12,
+        flexGrow: 0,
+    },
+    pickerFiltersContent: {
+        paddingHorizontal: 16,
+        alignItems: 'center',
+        paddingVertical: 2,
     },
     pickerChip: {
-        paddingHorizontal: 14,
-        paddingVertical: 6,
-        borderRadius: borderRadius.full,
-        backgroundColor: Colors.cardBg,
-        marginRight: 6,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        minHeight: 36,
+        borderRadius: 20,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        marginRight: 8,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     pickerChipActive: {
-        backgroundColor: 'rgba(191, 255, 10, 0.12)',
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
     },
     pickerChipText: {
-        color: Colors.textMuted,
-        fontSize: 12,
-        fontWeight: '600',
+        color: colors.textMuted,
+        fontSize: 13,
+        fontWeight: '700',
     },
     pickerChipTextActive: {
-        color: Colors.primary,
+        color: '#FFFFFF',
+        fontWeight: '800',
     },
     exerciseRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 10,
-        paddingHorizontal: Spacing.md,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginHorizontal: 16,
+        marginVertical: 4,
+        borderRadius: 14,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     exerciseRowSelected: {
-        backgroundColor: 'rgba(191, 255, 10, 0.04)',
+        backgroundColor: mode === 'dark' ? '#0F1E3D' : '#EFF6FF',
+        borderColor: '#2563EB',
     },
     exerciseRowLeft: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-        gap: 10,
+        gap: 12,
     },
     exerciseRowDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
     exerciseRowNameRow: {
         flexDirection: 'row',
@@ -3274,40 +4426,236 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     exerciseRowName: {
-        color: Colors.text,
-        fontSize: 14,
-        fontWeight: '600',
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '700',
         flexShrink: 1,
     },
     exerciseRowEquip: {
-        color: Colors.textMuted,
-        fontSize: 11,
-        marginTop: 1,
+        color: colors.textMuted,
+        fontSize: 12,
+        marginTop: 2,
     },
     customBadge: {
-        backgroundColor: 'rgba(191, 255, 10, 0.12)',
+        backgroundColor: 'rgba(37, 99, 235, 0.2)',
         paddingHorizontal: 6,
-        paddingVertical: 1,
-        borderRadius: borderRadius.full,
+        paddingVertical: 2,
+        borderRadius: 6,
     },
     customBadgeText: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
+    prioBadge: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+    },
+    prioBadgeText: {
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
+    prioBadgeSmall: {
+        paddingHorizontal: 5,
+        paddingVertical: 1,
+        borderRadius: 5,
+        borderWidth: 1,
+        marginLeft: 6,
+    },
+    prioBadgeSmallText: {
         fontSize: 9,
         fontWeight: '700',
         textTransform: 'uppercase',
     },
+    pickerControlsBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        marginBottom: 10,
+        gap: 8,
+    },
+    pickerControlBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+    },
+    pickerControlBtnActive: {
+        backgroundColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.1)',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
+    },
+    pickerControlBtnText: {
+        color: colors.textMuted,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    pickerControlBtnTextActive: {
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontWeight: '700',
+    },
+    pickerSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 6,
+        marginHorizontal: 16,
+        gap: 8,
+    },
+    pickerSectionDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    pickerSectionTitle: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        flex: 1,
+    },
+    pickerSectionCountBadge: {
+        backgroundColor: mode === 'dark' ? '#1E293B' : colors.surface_container_low || '#E2E8F0',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    pickerSectionCountText: {
+        color: colors.textMuted,
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    sortDayPrioBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 9,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        backgroundColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(37, 99, 235, 0.08)',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(37, 99, 235, 0.25)',
+    },
+    sortDayPrioBtnText: {
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    dayControlsBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+        marginTop: 4,
+    },
+    dayControlBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 9,
+        paddingHorizontal: 8,
+        borderRadius: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#F1F5F9',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+    },
+    dayControlBtnActive: {
+        backgroundColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.14)' : 'rgba(37, 99, 235, 0.1)',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
+    },
+    dayControlBtnText: {
+        color: colors.textMuted,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    dayControlBtnTextActive: {
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontWeight: '800',
+    },
+    tierSectionContainer: {
+        marginBottom: 12,
+    },
+    tierSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 6,
+        paddingHorizontal: 4,
+        marginBottom: 6,
+    },
+    tierSectionTitle: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+        flex: 1,
+    },
+    tierSectionBadge: {
+        backgroundColor: mode === 'dark' ? '#1E293B' : colors.surface_container_low || '#E2E8F0',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    tierSectionBadgeText: {
+        color: colors.textMuted,
+        fontSize: 10,
+        fontWeight: '700',
+    },
     exerciseCheckbox: {
-        width: 22,
-        height: 22,
-        borderRadius: 6,
+        width: 24,
+        height: 24,
+        borderRadius: 8,
         borderWidth: 1.5,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#334155' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
         justifyContent: 'center',
         alignItems: 'center',
     },
     exerciseCheckboxActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: '#2563EB',
+    },
+    pickerFooter: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+    },
+    pickerDoneBtn: {
+        backgroundColor: '#2563EB',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: 14,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    pickerDoneBtnText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+        letterSpacing: 0.3,
     },
 
     // ── Workout Logging ───────────────────────────────────────────────────
@@ -3320,7 +4668,7 @@ const styles = StyleSheet.create({
         width: 18,
         height: 18,
         borderRadius: 9,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#22C55E',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -3329,55 +4677,57 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: borderRadius.full,
         borderWidth: 1,
-        borderColor: Colors.primary,
-        backgroundColor: 'transparent',
+        borderColor: '#2563EB',
+        backgroundColor: 'rgba(37, 99, 235, 0.1)',
     },
     logDayBtnActive: {
-        backgroundColor: Colors.surfaceLight,
-        borderColor: Colors.textMuted,
+        backgroundColor: mode === 'dark' ? '#1E293B' : colors.surface_container_low || '#E2E8F0',
+        borderColor: mode === 'dark' ? '#334155' : colors.border,
     },
     logDayBtnText: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
         fontSize: Typography.xs,
         fontWeight: '700',
     },
     logDayBtnTextActive: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     logForm: {
         marginTop: 10,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     logExerciseCard: {
-        backgroundColor: Colors.surfaceLight,
-        borderRadius: borderRadius.md,
-        padding: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface,
+        borderRadius: 14,
+        padding: 12,
         marginBottom: 10,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     logExerciseName: {
-        color: Colors.text,
-        fontSize: Typography.md,
+        color: colors.text,
+        fontSize: 15,
         fontWeight: '700',
         marginBottom: 2,
     },
     logExercisePlan: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
         fontSize: Typography.xs,
         fontWeight: '600',
         marginBottom: 8,
     },
     logSetHeader: {
         flexDirection: 'row',
-        paddingBottom: 4,
+        paddingBottom: 6,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
-        marginBottom: 4,
+        borderBottomColor: mode === 'dark' ? '#1E293B' : colors.border,
+        marginBottom: 6,
     },
     logSetHeaderText: {
         flex: 1,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: Typography.xs,
         fontWeight: '700',
         textTransform: 'uppercase',
@@ -3394,18 +4744,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     logSetNumText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         fontWeight: '700',
     },
     logInput: {
         flex: 1,
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.sm,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+        borderRadius: 8,
         borderWidth: 1,
-        borderColor: Colors.border,
-        color: Colors.text,
-        fontSize: Typography.md,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        color: colors.text,
+        fontSize: 14,
         fontWeight: '600',
         textAlign: 'center',
         paddingVertical: 8,
@@ -3415,13 +4765,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        backgroundColor: Colors.primary,
-        paddingVertical: 10,
-        borderRadius: borderRadius.md,
-        marginTop: 6,
+        backgroundColor: '#2563EB',
+        paddingVertical: 12,
+        borderRadius: 12,
+        marginTop: 8,
     },
     saveLogBtnText: {
-        color: '#000',
+        color: '#FFFFFF',
         fontSize: 14,
         fontWeight: '700',
     },
@@ -3430,15 +4780,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 12,
+        backgroundColor: '#2563EB',
+        paddingHorizontal: 14,
         paddingVertical: 8,
-        borderRadius: borderRadius.md,
+        borderRadius: 10,
     },
     addBtnText: {
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: '700',
-        color: '#000',
+        color: '#FFFFFF',
     },
     // ── FAB ──────────────────────────────────────────────
     fab: {
@@ -3448,10 +4798,10 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#2563EB',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: Colors.primary,
+        shadowColor: '#2563EB',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.4,
         shadowRadius: 8,
@@ -3468,29 +4818,29 @@ const styles = StyleSheet.create({
 
     // ── Session Count Badge ────────────────────────────
     sessionCountBadge: {
-        backgroundColor: Colors.primary + '22',
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: borderRadius.full,
     },
     sessionCountText: {
-        color: Colors.primary,
-        fontSize: 18,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
         fontWeight: '700',
     },
 
     // ── Session History ────────────────────────────────
     sessionHistoryContainer: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.md,
-        padding: 10,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface,
+        borderRadius: 14,
+        padding: 12,
         marginTop: 6,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     sessionHistoryTitle: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
         fontWeight: '700',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
@@ -3500,34 +4850,34 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        paddingVertical: 5,
+        paddingVertical: 6,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border + '50',
+        borderBottomColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     sessionHistoryDot: {
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#2563EB',
     },
     sessionHistoryLabel: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 12,
         fontWeight: '600',
     },
     sessionHistoryDate: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
     },
     sessionHistoryComment: {
-        color: Colors.primary,
-        fontSize: 18,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
         fontStyle: 'italic',
         marginTop: 2,
     },
     sessionHistorySummary: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
         fontWeight: '500',
     },
 
@@ -3541,39 +4891,39 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#22C55E',
         justifyContent: 'center',
         alignItems: 'center',
     },
     savedTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 16,
         fontWeight: '700',
     },
     savedSub: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 13,
         marginBottom: 8,
     },
     sessionCommentBox: {
-        backgroundColor: Colors.primary + '08',
+        backgroundColor: 'rgba(37, 99, 235, 0.08)',
         padding: 12,
-        borderRadius: borderRadius.md,
+        borderRadius: 12,
         marginBottom: 12,
         borderLeftWidth: 4,
-        borderLeftColor: Colors.primary,
+        borderLeftColor: '#2563EB',
     },
     sessionCommentLabel: {
-        color: Colors.primary,
-        fontSize: 18,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+        fontSize: 12,
         fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 4,
     },
     sessionCommentText: {
-        color: Colors.text,
-        fontSize: 18,
+        color: colors.text,
+        fontSize: 13,
         lineHeight: 18,
         fontStyle: 'italic',
     },
@@ -3582,14 +4932,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        backgroundColor: Colors.primary,
-        paddingVertical: 10,
+        backgroundColor: '#2563EB',
+        paddingVertical: 12,
         paddingHorizontal: 20,
-        borderRadius: borderRadius.md,
+        borderRadius: 12,
         width: '100%',
     },
     newSessionBtnText: {
-        color: '#000',
+        color: '#FFFFFF',
         fontSize: 14,
         fontWeight: '700',
     },
@@ -3598,12 +4948,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
     },
     closeDayBtnText: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 13,
         fontWeight: '600',
     },
     newSessionTitle: {
-        color: Colors.primary,
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
         fontSize: 14,
         fontWeight: '700',
         marginBottom: 8,
@@ -3611,20 +4961,20 @@ const styles = StyleSheet.create({
     // ── Session Details Expansion ──────────────────────
     sessionHistoryItemWrap: {
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border + '50',
+        borderBottomColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     sessionDetails: {
         paddingVertical: 10,
         paddingHorizontal: 15,
-        backgroundColor: Colors.surface + '50',
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.background,
         gap: 12,
     },
     sessionExDetail: {
         gap: 4,
     },
     sessionExName: {
-        color: Colors.text,
-        fontSize: 18,
+        color: colors.text,
+        fontSize: 13,
         fontWeight: '700',
     },
     sessionSetsGrid: {
@@ -3632,8 +4982,8 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     sessionSetDetail: {
-        color: '#FFFFFF',
-        fontSize: 18,
+        color: colors.text,
+        fontSize: 12,
         paddingVertical: 2,
     },
     // ── Comment Input ──────────────────────────────────
@@ -3643,16 +4993,16 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     commentLabel: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
         fontWeight: '600',
     },
     commentInput: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.md,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+        borderRadius: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
-        color: Colors.text,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        color: colors.text,
         fontSize: 14,
         paddingHorizontal: 12,
         paddingVertical: 10,
@@ -3661,15 +5011,15 @@ const styles = StyleSheet.create({
     },
     // ── Quick Add Form ─────────────────────────────────
     quickAddContent: {
-        backgroundColor: Colors.surface,
-        borderRadius: borderRadius.md,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface,
+        borderRadius: 14,
         padding: 15,
         marginBottom: 15,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     quickAddTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 14,
         fontWeight: '700',
         marginBottom: 12,
@@ -3678,13 +5028,13 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     quickAddInput: {
-        backgroundColor: Colors.cardBg,
-        borderRadius: borderRadius.sm,
+        backgroundColor: mode === 'dark' ? '#060B14' : '#FFFFFF',
+        borderRadius: 10,
         borderWidth: 1,
-        borderColor: Colors.border,
-        color: Colors.text,
-        fontSize: 18,
-        paddingHorizontal: 10,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        color: colors.text,
+        fontSize: 14,
+        paddingHorizontal: 12,
         paddingVertical: 8,
     },
     quickAddRow: {
@@ -3692,29 +5042,31 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     quickAddLabel: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
         marginBottom: 4,
     },
     quickAddChip: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         borderRadius: borderRadius.full,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.surface_container_low || '#F1F5F9',
         marginRight: 6,
     },
     quickAddChipActive: {
-        backgroundColor: Colors.primary + '22',
-        borderColor: Colors.primary,
+        backgroundColor: '#2563EB',
+        borderColor: mode === 'dark' ? '#38BDF8' : '#2563EB',
     },
     quickAddChipText: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 12,
         fontWeight: '600',
     },
     quickAddChipTextActive: {
-        color: Colors.primary,
+        color: '#FFFFFF',
+        fontWeight: '700',
     },
     quickAddActions: {
         flexDirection: 'row',
@@ -3727,21 +5079,21 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
     },
     quickAddCancelText: {
-        color: Colors.textMuted,
-        fontSize: 18,
+        color: colors.textMuted,
+        fontSize: 13,
     },
     quickAddBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#2563EB',
         paddingHorizontal: 15,
         paddingVertical: 8,
-        borderRadius: borderRadius.sm,
+        borderRadius: 10,
     },
     quickAddBtnText: {
-        color: '#000',
-        fontSize: 18,
+        color: '#FFFFFF',
+        fontSize: 13,
         fontWeight: '700',
     },
     // ── Wizard Client Selector ────────────────────────
@@ -3754,45 +5106,12 @@ const styles = StyleSheet.create({
         gap: 8,
         marginTop: 10,
     },
-    // New fields
-    repsInputWrapper: {
-        width: 80,
-        gap: 8,
-    },
-    repsRangeContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    rangeDash: {
-        color: Colors.textMuted,
-        fontSize: 18,
-        fontWeight: '700',
-        marginTop: 20,
-    },
-    repsInput: {
-        borderWidth: 1,
-        borderRadius: borderRadius.sm,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        fontSize: Typography.md,
-        fontWeight: '700',
-        textAlign: 'center',
-    },
-    instructionInput: {
-        borderWidth: 1,
-        borderRadius: borderRadius.md,
-        padding: 10,
-        marginTop: 10,
-        minHeight: 60,
-        fontSize: Typography.sm,
-        textAlignVertical: 'top',
-    },
     logExerciseInstruction: {
         fontSize: Typography.sm,
         fontStyle: 'italic',
         marginTop: 4,
         opacity: 0.8,
+        color: colors.textMuted,
     },
     // ── Grouping UI Styles for Plan Builder ─────────────────────────
     groupCheckboxPlan: {
@@ -3800,17 +5119,18 @@ const styles = StyleSheet.create({
         height: 24,
         borderRadius: 12,
         borderWidth: 2,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         justifyContent: 'center',
         alignItems: 'center',
         position: 'absolute',
         top: 12,
         right: 12,
         zIndex: 10,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: mode === 'dark' ? '#060B14' : colors.surface,
     },
     groupCheckboxPlanActive: {
-        borderColor: '#CCFF00',
+        borderColor: '#2563EB',
+        backgroundColor: mode === 'dark' ? '#0F1E3D' : '#EFF6FF',
     },
     checkboxInner: {
         width: 12,
@@ -3819,10 +5139,12 @@ const styles = StyleSheet.create({
     },
     supersetWrapperPlan: {
         borderLeftWidth: 4,
-        borderRadius: borderRadius.md,
+        borderRadius: 14,
         paddingLeft: 0,
         marginBottom: 10,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
         overflow: 'hidden',
     },
     supersetHeaderPlanNew: {
@@ -3830,18 +5152,86 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: Spacing.sm,
-        paddingVertical: 6,
+        paddingVertical: 8,
     },
     supersetLabelText: {
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '900',
         color: '#FFF',
         letterSpacing: 1,
+        textTransform: 'uppercase',
     },
     ungroupTextPlanSmall: {
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '700',
-        color: 'rgba(255,255,255,0.8)',
+        color: 'rgba(255,255,255,0.85)',
+    },
+    blockPosBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 8,
+        backgroundColor: mode === 'dark' ? '#1E293B' : '#E2E8F0',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#334155' : '#CBD5E1',
+        marginRight: 6,
+    },
+    blockPosBadgeText: {
+        fontSize: 11,
+        fontWeight: '900',
+        color: mode === 'dark' ? '#F8FAFC' : '#0F172A',
+        letterSpacing: 0.3,
+    },
+    blockPosBadgeSuperset: {
+        backgroundColor: 'rgba(255, 255, 255, 0.22)',
+        borderColor: 'rgba(255, 255, 255, 0.45)',
+        marginRight: 8,
+    },
+    blockPosBadgeTextSuperset: {
+        color: '#FFFFFF',
+    },
+    blockMoveToTopBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 7,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
+        marginLeft: 8,
+    },
+    blockMoveToTopText: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: '#FFFFFF',
+    },
+    blockMoveToTopBtnSingle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 7,
+        paddingVertical: 4,
+        borderRadius: 7,
+        backgroundColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? 'rgba(56, 189, 248, 0.35)' : 'rgba(37, 99, 235, 0.25)',
+    },
+    blockMoveToTopTextSingle: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
+    },
+    blockArrowsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+    },
+    blockArrowBtn: {
+        padding: 4,
     },
     groupModeBarPlan: {
         flexDirection: 'row',
@@ -3854,38 +5244,137 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: 'rgba(204, 255, 0, 0.15)',
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
         paddingHorizontal: 20,
         paddingVertical: 12,
-        borderRadius: borderRadius.full,
+        borderRadius: 14,
         borderWidth: 1,
-        borderColor: 'rgba(204, 255, 0, 0.3)',
+        borderColor: '#2563EB',
     },
     startGroupText: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#CCFF00',
+        color: mode === 'dark' ? '#38BDF8' : colors.primary,
     },
     cancelGroupBtn: {
         paddingHorizontal: 20,
         paddingVertical: 12,
-        borderRadius: borderRadius.full,
-        backgroundColor: Colors.surface,
+        borderRadius: 14,
+        backgroundColor: mode === 'dark' ? '#080E1A' : colors.surface_container_low || '#E2E8F0',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
     },
     cancelGroupText: {
         fontSize: 14,
         fontWeight: '600',
-        color: Colors.text,
+        color: colors.textMuted,
     },
     confirmGroupBtn: {
         paddingHorizontal: 24,
         paddingVertical: 12,
-        borderRadius: borderRadius.full,
+        borderRadius: 14,
+        backgroundColor: '#2563EB',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 6,
     },
     confirmGroupText: {
         fontSize: 14,
         fontWeight: '800',
+        color: '#FFFFFF',
+    },
+    optionsPushBackdrop: {
+        ...StyleSheet.absoluteFill,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        justifyContent: 'flex-end',
+        zIndex: 9999,
+        elevation: 20,
+    },
+    optionsPushCard: {
+        backgroundColor: mode === 'dark' ? '#0D172E' : colors.surface,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? '#1E293B' : colors.border,
+    },
+    optionsPushHandle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.25)' : colors.border,
+        alignSelf: 'center',
+        marginBottom: 16,
+    },
+    optionsPushHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        marginBottom: 18,
+    },
+    optionsPushIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    optionsPushIconWrapDestructive: {
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    },
+    optionsPushTitle: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: 4,
+    },
+    optionsPushMessage: {
+        fontSize: 13,
+        color: colors.textMuted,
+        lineHeight: 18,
+    },
+    optionsPushActions: {
+        gap: 10,
+    },
+    optionsPushBtn: {
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    optionsPushBtnText: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    optionsPushBtnPrimary: {
+        backgroundColor: '#2563EB',
+    },
+    optionsPushBtnTextPrimary: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    optionsPushBtnDestructive: {
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.4)',
+    },
+    optionsPushBtnTextDestructive: {
+        color: '#EF4444',
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    optionsPushBtnCancel: {
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+    },
+    optionsPushBtnTextCancel: {
+        color: colors.textMuted,
+        fontSize: 14,
+        fontWeight: '600',
     },
 });

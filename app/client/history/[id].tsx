@@ -1,6 +1,8 @@
 import { Colors, Spacing } from '@/constants/theme';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import api from '@/services/api';
+import { showToast } from '@/services/toast';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Calendar, ChevronRight, ClipboardList, Dumbbell, Trash2, User } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -21,6 +23,8 @@ export default function ClientHistory() {
     const router = useRouter();
     const { clients, currentUser } = useUser();
     const insets = useSafeAreaInsets();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
 
     const [plans, setPlans] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -47,24 +51,27 @@ export default function ClientHistory() {
     };
 
     const handleDeletePlan = (planId: number, name: string) => {
-        Alert.alert(
-            "Eliminar Plan",
+        showToast.confirm(
+            'Eliminar Plan de Entrenamiento',
             `¿Estás seguro de que deseas eliminar el plan de ${name}? Esta acción no se puede deshacer.`,
             [
-                { text: "Cancelar", style: "cancel" },
                 {
-                    text: "Eliminar",
-                    style: "destructive",
+                    text: 'Eliminar Plan',
+                    style: 'destructive',
                     onPress: async () => {
                         try {
                             await api.delete(`plans/${planId}`);
                             setPlans(prev => prev.filter(p => p.id !== planId));
-                            Alert.alert("Éxito", "Plan eliminado correctamente.");
+                            showToast.success('Plan eliminado correctamente');
                         } catch (error) {
                             console.error('Error deleting plan:', error);
-                            Alert.alert("Error", "No se pudo eliminar el plan.");
+                            showToast.error('No se pudo eliminar el plan');
                         }
                     }
+                },
+                {
+                    text: 'Cancelar',
+                    style: 'cancel'
                 }
             ]
         );
@@ -77,24 +84,24 @@ export default function ClientHistory() {
                 onPress={() => router.push({ pathname: '/client/plan/[id]', params: { id: item.id } })}
             >
                 <View style={styles.planIconContainer}>
-                    <ClipboardList size={22} color={Colors.primary} />
+                    <ClipboardList size={22} color={colors.primary} />
                 </View>
                 <View style={styles.planTitleContainer}>
                     <Text style={styles.planTitle}>Plan {item.month} {item.year}</Text>
                     <Text style={styles.planSubtitle}>{item.days_per_week} días por semana • {item.split_type}</Text>
                 </View>
-                <ChevronRight size={20} color={Colors.textMuted} />
+                <ChevronRight size={20} color={colors.textMuted} />
             </TouchableOpacity>
 
             <View style={styles.planDetails}>
                 <View style={styles.planFooterRow}>
                     <View style={styles.planStatsList}>
                         <View style={styles.planStat}>
-                            <Calendar size={14} color={Colors.textMuted} />
+                            <Calendar size={14} color={colors.textMuted} />
                             <Text style={styles.planStatText}>Asignado el {new Date(item.created_at).toLocaleDateString()}</Text>
                         </View>
                         <View style={styles.planStat}>
-                            <Dumbbell size={14} color={Colors.textMuted} />
+                            <Dumbbell size={14} color={colors.textMuted} />
                             <Text style={styles.planStatText}>{item.training_days?.length || 0} Sesiones definidas</Text>
                         </View>
                     </View>
@@ -104,7 +111,7 @@ export default function ClientHistory() {
                             onPress={() => handleDeletePlan(item.id, `Plan ${item.month} ${item.year}`)}
                             style={styles.deleteBtn}
                         >
-                            <Trash2 size={18} color={Colors.danger} />
+                            <Trash2 size={18} color={colors.danger} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -129,19 +136,19 @@ export default function ClientHistory() {
                 headerShown: true,
                 headerTitle: 'Historial de Planes',
                 headerTransparent: true,
-                headerTintColor: '#fff',
+                headerTintColor: colors.text,
                 headerLeft: () => (
                     <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
-                        <ArrowLeft size={24} color="#fff" />
+                        <ArrowLeft size={24} color={colors.text} />
                     </TouchableOpacity>
                 ),
             }} />
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} />
 
             <View style={[styles.topHeader, { paddingTop: Math.max(insets.top, 20) + 30 }]}>
                 <View style={styles.clientSummary}>
                     <View style={styles.avatarSmall}>
-                        <User size={20} color={Colors.primary} />
+                        <User size={20} color={colors.primary} />
                     </View>
                     <Text style={styles.clientNameHeader}>{client.name}</Text>
                 </View>
@@ -149,7 +156,7 @@ export default function ClientHistory() {
 
             {loading ? (
                 <View style={styles.centered}>
-                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <ActivityIndicator size="large" color={colors.primary} />
                     <Text style={styles.loadingText}>Cargando historial...</Text>
                 </View>
             ) : (
@@ -161,7 +168,7 @@ export default function ClientHistory() {
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <View style={styles.emptyIconCircle}>
-                                <ClipboardList size={40} color={Colors.textMuted} />
+                                <ClipboardList size={40} color={colors.textMuted} />
                             </View>
                             <Text style={styles.emptyTitle}>Sin planes registrados</Text>
                             <Text style={styles.emptySubtitle}>Este cliente aún no tiene planes de entrenamiento asignados.</Text>
@@ -179,18 +186,20 @@ export default function ClientHistory() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     topHeader: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         paddingTop: 100,
         paddingBottom: 20,
         paddingHorizontal: Spacing.md,
         borderBottomLeftRadius: 24,
         borderBottomRightRadius: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
     },
     clientSummary: {
         flexDirection: 'row',
@@ -201,14 +210,14 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 12,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         justifyContent: 'center',
         alignItems: 'center',
     },
     clientNameHeader: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     headerBack: {
         marginLeft: 10,
@@ -219,11 +228,11 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     planCard: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 24,
         padding: 20,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     planHeader: {
         flexDirection: 'row',
@@ -235,7 +244,7 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 14,
-        backgroundColor: 'rgba(204, 255, 0, 0.1)',
+        backgroundColor: colors.primary + '18',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -245,18 +254,18 @@ const styles = StyleSheet.create({
     planTitle: {
         fontSize: 17,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     planSubtitle: {
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginTop: 2,
         fontWeight: '600',
     },
     planDetails: {
         paddingTop: 15,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: colors.border,
         gap: 8,
     },
     planStat: {
@@ -266,7 +275,7 @@ const styles = StyleSheet.create({
     },
     planStatText: {
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '500',
     },
     planFooterRow: {
@@ -292,26 +301,27 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
         padding: 40,
     },
     loadingText: {
         marginTop: 15,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
     },
     errorText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 16,
         marginBottom: 20,
     },
     backBtn: {
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: 30,
         paddingVertical: 12,
         borderRadius: 12,
     },
     backBtnText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontWeight: 'bold',
     },
     emptyContainer: {
@@ -322,22 +332,22 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 30,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     emptyTitle: {
         fontSize: 20,
         fontWeight: '900',
-        color: Colors.text,
+        color: colors.text,
         textAlign: 'center',
     },
     emptySubtitle: {
         fontSize: 14,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         textAlign: 'center',
         marginTop: 8,
         lineHeight: 20,
@@ -345,13 +355,13 @@ const styles = StyleSheet.create({
     },
     createBtn: {
         marginTop: 25,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: 24,
         paddingVertical: 14,
         borderRadius: 16,
     },
     createBtnText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontWeight: '800',
         fontSize: 14,
     }

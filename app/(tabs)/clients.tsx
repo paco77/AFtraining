@@ -4,7 +4,7 @@ import { useUser } from '@/context/UserContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CalendarDays, ChevronRight, Dumbbell, Info, Plus, User, Users, Search, X } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Dimensions,
     FlatList,
@@ -23,7 +23,10 @@ const { width } = Dimensions.get('window');
 
 export default function ClientsScreen() {
     const router = useRouter();
-    const { clients, fetchClients, isCoach } = useUser();
+    const { clients, currentUser, refreshProfile } = useUser();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
+    const isCoach = currentUser?.role === 'coach';
     const insets = useSafeAreaInsets();
     const [searchQuery, setSearchQuery] = useState('');
     const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -53,14 +56,14 @@ export default function ClientsScreen() {
                             style={styles.avatarImage}
                         />
                     ) : (
-                        <User size={24} color={Colors.primary} />
+                        <User size={24} color={colors.primary} />
                     )}
                 </View>
                 <View style={styles.clientInfo}>
                     <Text style={styles.clientName}>{item.name}</Text>
                     <Text style={styles.clientGoal}>{item.objectives}</Text>
                 </View>
-                <ChevronRight size={20} color={Colors.textMuted} />
+                <ChevronRight size={20} color={colors.textMuted} />
             </View>
             <View style={styles.cardStats}>
                 <View style={styles.stat}>
@@ -86,7 +89,7 @@ export default function ClientsScreen() {
                         params: { clientId: item.id }
                     })}
                 >
-                    <CalendarDays size={14} color={Colors.white} />
+                    <CalendarDays size={14} color={mode === 'dark' ? '#000' : '#FFF'} />
                     <Text style={styles.actionBtnText}>Asignar Plan</Text>
                 </TouchableOpacity>
 
@@ -98,7 +101,7 @@ export default function ClientsScreen() {
                         params: { filterClientId: item.id }
                     })}
                 >
-                    <Dumbbell size={14} color={Colors.primary} />
+                    <Dumbbell size={14} color={colors.primary} />
                     <Text style={styles.viewPlansBtnText}>Ver Planes</Text>
                 </TouchableOpacity>
             </View>
@@ -109,7 +112,7 @@ export default function ClientsScreen() {
                     activeOpacity={0.8}
                     onPress={() => router.push({ pathname: '/client/[id]', params: { id: item.id } })}
                 >
-                    <Info size={14} color={Colors.text} />
+                    <Info size={14} color={colors.text} />
                     <Text style={styles.secondaryBtnText}>Info</Text>
                 </TouchableOpacity>
             </View>
@@ -122,27 +125,26 @@ export default function ClientsScreen() {
                 <View />
                 <TouchableOpacity
                     style={styles.addBtn}
-                    // turbo
                     onPress={() => router.push('/(tabs)/new-client')}
                 >
-                    <Plus size={18} color={Colors.white} />
+                    <Plus size={18} color={mode === 'dark' ? '#000' : '#FFF'} />
                     <Text style={styles.addBtnText}>Añadir</Text>
                 </TouchableOpacity>
             </View>
 
             <View style={{ paddingHorizontal: Spacing.md, marginTop: 10, marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: Colors.border }}>
-                    <Search size={18} color={Colors.textMuted} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: colors.border }}>
+                    <Search size={18} color={colors.textMuted} />
                     <TextInput
-                        style={{ flex: 1, marginLeft: 8, color: Colors.text, fontSize: 14 }}
+                        style={{ flex: 1, marginLeft: 8, color: colors.text, fontSize: 14 }}
                         placeholder="Buscar por nombre o usuario..."
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <X size={16} color={Colors.textMuted} />
+                            <X size={16} color={colors.textMuted} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -151,7 +153,7 @@ export default function ClientsScreen() {
             {filteredClients.length === 0 ? (
                 <View style={styles.emptyContainer}>
                     <View style={styles.emptyIcon}>
-                        <Users size={48} color={Colors.textMuted} />
+                        <Users size={48} color={colors.textMuted} />
                     </View>
                     <Text style={styles.emptyTitle}>No tienes clientes todavía</Text>
                     <Text style={styles.emptySubtitle}>Comienza agregando a tu primer entrenado para gestionar su plan.</Text>
@@ -169,10 +171,10 @@ export default function ClientsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -181,30 +183,31 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.md,
         paddingTop: Spacing.sm,
         paddingBottom: Spacing.sm,
-        backgroundColor: Colors.surface,
-        borderBottomWidth: 0,
+        backgroundColor: colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
     },
     title: {
         fontFamily: Fonts.display,
         fontSize: 28,
-        color: Colors.text,
+        color: colors.text,
         letterSpacing: -1,
     },
     subtitle: {
         fontFamily: Fonts.body,
         fontSize: 14,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginTop: 2,
     },
     addBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 14,
         gap: 8,
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -213,18 +216,18 @@ const styles = StyleSheet.create({
     addBtnText: {
         fontFamily: Fonts.bodyBold,
         fontSize: 14,
-        color: Colors.white,
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     list: {
         padding: Spacing.md,
         gap: 16,
     },
     card: {
-        backgroundColor: Colors.surface_container_low,
+        backgroundColor: colors.surface,
         borderRadius: borderRadius.lg,
         padding: 20,
-        borderWidth: 0,
-        borderColor: Colors.surface_lowest,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -235,7 +238,7 @@ const styles = StyleSheet.create({
         width: 52,
         height: 52,
         borderRadius: 18,
-        backgroundColor: Colors.surface_container,
+        backgroundColor: colors.surfaceLight,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 14,
@@ -252,13 +255,13 @@ const styles = StyleSheet.create({
     clientName: {
         fontFamily: Fonts.headline,
         fontSize: 18,
-        color: Colors.text,
+        color: colors.text,
         letterSpacing: -0.5,
     },
     clientGoal: {
         fontFamily: Fonts.body,
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginTop: 2,
     },
     cardStats: {
@@ -275,14 +278,14 @@ const styles = StyleSheet.create({
     statLabel: {
         fontFamily: Fonts.label,
         fontSize: 10,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         letterSpacing: 1,
         marginBottom: 4,
     },
     statValue: {
         fontFamily: Fonts.display,
         fontSize: 18,
-        color: Colors.text,
+        color: colors.text,
     },
     actionRow: {
         flexDirection: 'row',
@@ -299,23 +302,23 @@ const styles = StyleSheet.create({
     },
     assignBtn: {
         flex: 2,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
     },
     secondaryBtn: {
         flex: 1,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surfaceLight,
         borderWidth: 1,
-        borderColor: Colors.outline_variant,
+        borderColor: colors.border,
     },
     actionBtnText: {
         fontFamily: Fonts.bodyBold,
         fontSize: 13,
-        color: Colors.white,
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     secondaryBtnText: {
         fontFamily: Fonts.bodyBold,
         fontSize: 13,
-        color: Colors.text,
+        color: colors.text,
     },
     emptyContainer: {
         flex: 1,
@@ -328,7 +331,7 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 40,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
@@ -336,14 +339,14 @@ const styles = StyleSheet.create({
     emptyTitle: {
         fontFamily: Fonts.headline,
         fontSize: 22,
-        color: Colors.text,
+        color: colors.text,
         textAlign: 'center',
         letterSpacing: -0.5,
     },
     emptySubtitle: {
         fontFamily: Fonts.body,
         fontSize: 15,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         textAlign: 'center',
         marginTop: 10,
         lineHeight: 22,
@@ -357,6 +360,6 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.label,
         textTransform: 'uppercase',
         fontSize: 13,
-        color: Colors.primary,
+        color: colors.primary,
     },
 });

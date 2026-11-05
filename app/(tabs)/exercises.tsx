@@ -1,7 +1,10 @@
 import {
     Exercise,
+    inferMuscleGroupFromName,
+    isSameMuscleGroup,
     Level,
     MuscleGroup,
+    sanitizeExerciseGroup,
 } from '@/constants/ExerciseData';
 import { borderRadius, Colors, MuscleGroupColors, Spacing } from '@/constants/theme';
 import { usePlans } from '@/context/PlanContext';
@@ -21,11 +24,14 @@ import {
     X,
     Edit2,
     Video,
+    Link2,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
 import { SafeVideo } from '@/components/SafeVideo';
+import { ExternalVideoCard } from '@/components/ExternalVideoCard';
+import { isExternalVideoLink, isValidWebUrl, normalizeVideoLink } from '@/services/videoLinks';
 import {
     Alert,
     FlatList,
@@ -64,6 +70,8 @@ const MUSCLE_ICONS: Record<string, string> = {
 // ─── Level Badge Component ────────────────────────────────────────────────────
 
 const LevelBadge = ({ level }: { level: Level }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const isIntermediate = level === 'Intermedio';
     return (
         <View
@@ -72,17 +80,17 @@ const LevelBadge = ({ level }: { level: Level }) => {
                 {
                     backgroundColor: isIntermediate
                         ? 'rgba(247, 183, 49, 0.15)'
-                        : 'rgba(191, 255, 10, 0.12)',
+                        : (mode === 'dark' ? 'rgba(93, 166, 255, 0.15)' : 'rgba(29, 78, 216, 0.12)'),
                     borderColor: isIntermediate
                         ? 'rgba(247, 183, 49, 0.3)'
-                        : 'rgba(191, 255, 10, 0.25)',
+                        : (mode === 'dark' ? 'rgba(93, 166, 255, 0.3)' : 'rgba(29, 78, 216, 0.25)'),
                 },
             ]}
         >
             <Text
                 style={[
                     styles.levelBadgeText,
-                    { color: isIntermediate ? '#f7b731' : Colors.primary },
+                    { color: isIntermediate ? '#f7b731' : colors.primary },
                 ]}
             >
                 {level}
@@ -93,19 +101,25 @@ const LevelBadge = ({ level }: { level: Level }) => {
 
 // ─── Muscle Tag Component ─────────────────────────────────────────────────────
 
-const MuscleTag = ({ name, accent }: { name: string; accent?: boolean }) => (
-    <View style={[styles.muscleTag, accent && styles.muscleTagAccent]}>
-        <Text style={[styles.muscleTagText, accent && styles.muscleTagTextAccent]}>
-            {name}
-        </Text>
-    </View>
-);
+const MuscleTag = ({ name, accent }: { name: string; accent?: boolean }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
+    return (
+        <View style={[styles.muscleTag, accent && styles.muscleTagAccent]}>
+            <Text style={[styles.muscleTagText, accent && styles.muscleTagTextAccent]}>
+                {name}
+            </Text>
+        </View>
+    );
+};
 
 // ─── Exercise Card Component ──────────────────────────────────────────────────
 
 const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDelete?: (id: string) => void; onEdit?: (exercise: Exercise) => void }) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const [expanded, setExpanded] = useState(false);
-    const groupColor = MuscleGroupColors[exercise.muscleGroup] || Colors.primary;
+    const groupColor = MuscleGroupColors[exercise.muscleGroup] || colors.primary;
 
     return (
         <TouchableOpacity
@@ -123,7 +137,7 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                             {exercise.name}
                         </Text>
                         <View style={styles.equipmentRow}>
-                            <Dumbbell size={12} color={Colors.textMuted} />
+                            <Dumbbell size={12} color={colors.textMuted} />
                             <Text style={styles.exerciseEquipment}>{exercise.equipment}</Text>
                         </View>
                     </View>
@@ -136,7 +150,7 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                                     style={styles.deleteExBtn}
                                     onPress={() => onEdit(exercise)}
                                 >
-                                    <Edit2 size={14} color={Colors.textMuted} />
+                                    <Edit2 size={14} color={colors.textMuted} />
                                 </TouchableOpacity>
                             )}
                             {onDelete && (
@@ -153,16 +167,16 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                                         );
                                     }}
                                 >
-                                    <Trash2 size={14} color={Colors.danger} />
+                                    <Trash2 size={14} color={colors.danger} />
                                 </TouchableOpacity>
                             )}
                         </View>
                     )}
                     <LevelBadge level={exercise.level} />
                     {expanded ? (
-                        <ChevronUp size={16} color={Colors.textMuted} />
+                        <ChevronUp size={16} color={colors.textMuted} />
                     ) : (
-                        <ChevronDown size={16} color={Colors.textMuted} />
+                        <ChevronDown size={16} color={colors.textMuted} />
                     )}
                 </View>
             </View>
@@ -222,7 +236,12 @@ const ExerciseCard = ({ exercise, onDelete, onEdit }: { exercise: Exercise; onDe
                                 <Text style={styles.detailLabelIcon}>🎥</Text>
                                 <Text style={styles.detailLabel}>Video/GIF</Text>
                             </View>
-                            {exercise.videoUrl.toLowerCase().includes('.mp4') ? (
+                            {isExternalVideoLink(exercise.videoUrl) ? (
+                                <ExternalVideoCard
+                                    url={exercise.videoUrl}
+                                    style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginTop: 8 }}
+                                />
+                            ) : exercise.videoUrl.toLowerCase().includes('.mp4') ? (
                                 <SafeVideo
                                     sourceUri={exercise.videoUrl.startsWith('http') ? exercise.videoUrl : `${API_HOST}${exercise.videoUrl.startsWith('/') ? '' : '/'}${exercise.videoUrl}`}
                                     style={{ width: '100%', height: 250, borderRadius: 12, marginTop: 8, backgroundColor: '#0F172A' }}
@@ -253,6 +272,8 @@ interface AddExerciseFormProps {
 }
 
 const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFormProps) => {
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const [name, setName] = useState('');
     const [equipment, setEquipment] = useState('');
     const [description, setDescription] = useState('');
@@ -305,6 +326,13 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
             return;
         }
 
+        const isLocalFile = videoUrl.startsWith('file');
+        if (videoUrl.trim() && !isLocalFile && !videoUrl.startsWith('/') && !isValidWebUrl(videoUrl)) {
+            Alert.alert('Link inválido', 'Ingresa un enlace válido (YouTube, Instagram, TikTok, etc.).');
+            return;
+        }
+        const finalVideoUrl = isLocalFile || videoUrl.startsWith('/') ? videoUrl.trim() : normalizeVideoLink(videoUrl);
+
         const newExercise: Exercise = {
             id: initialData ? initialData.id : `custom-${Date.now()}`,
             name: name.trim(),
@@ -323,7 +351,7 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                 .split(',')
                 .map((b) => b.trim())
                 .filter(Boolean),
-            videoUrl: videoUrl.trim(),
+            videoUrl: finalVideoUrl,
             level: selectedLevel,
             isCustom: true,
         };
@@ -370,7 +398,16 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                         <TextInput
                             style={styles.formInput}
                             value={name}
-                            onChangeText={setName}
+                            onChangeText={(val) => {
+                                setName(val);
+                                if (!initialData) {
+                                    const inferred = inferMuscleGroupFromName(val);
+                                    if (inferred) {
+                                        const match = muscleGroups.find(g => isSameMuscleGroup(g, inferred));
+                                        if (match) setSelectedGroup(match);
+                                    }
+                                }
+                            }}
                             placeholder="Ej: Press de Banca Cerrado"
                             placeholderTextColor={Colors.textMuted}
                         />
@@ -485,13 +522,13 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                             value={benefits}
                             onChangeText={setBenefits}
                             placeholder="Separados por coma: Fuerza, Hipertrofia"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                         />
 
                         {/* Video File */}
                         <Text style={styles.formLabel}>Video (Opcional)</Text>
                         <TouchableOpacity
-                            style={[styles.formInput, { justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surfaceLight }]}
+                            style={[styles.formInput, { justifyContent: 'center', alignItems: 'center', backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest }]}
                             onPress={async () => {
                                 const result = await ImagePicker.launchImageLibraryAsync({
                                     mediaTypes: ImagePicker.MediaTypeOptions.Videos,
@@ -503,25 +540,56 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
                                 }
                             }}
                         >
-                            {videoUrl ? (
-                                <Text style={{ color: Colors.primary }} numberOfLines={1}>
+                            {videoUrl && (videoUrl.startsWith('file') || videoUrl.startsWith('/') || (/^https?:\/\//i.test(videoUrl) && !isExternalVideoLink(videoUrl))) ? (
+                                <Text style={{ color: colors.primary }} numberOfLines={1}>
                                     {videoUrl.split('/').pop() || 'Video seleccionado'}
                                 </Text>
                             ) : (
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                    <Video size={18} color={Colors.textMuted} />
-                                    <Text style={{ color: Colors.textMuted }}>Seleccionar video</Text>
+                                    <Video size={18} color={colors.textMuted} />
+                                    <Text style={{ color: colors.textMuted }}>Seleccionar video</Text>
                                 </View>
                             )}
                         </TouchableOpacity>
 
+                        {/* Video Link */}
+                        <View style={styles.orDividerRow}>
+                            <View style={styles.orDividerLine} />
+                            <Text style={styles.orDividerText}>o pega un link</Text>
+                            <View style={styles.orDividerLine} />
+                        </View>
+                        <View style={[styles.formInput, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 0 }]}>
+                            <Link2 size={18} color={isExternalVideoLink(normalizeVideoLink(videoUrl)) ? colors.primary : colors.textMuted} />
+                            <TextInput
+                                style={{ flex: 1, color: colors.text, fontSize: 15, paddingVertical: 12 }}
+                                value={videoUrl.startsWith('file') || videoUrl.startsWith('/') ? '' : videoUrl}
+                                onChangeText={setVideoUrl}
+                                placeholder="YouTube, Instagram, TikTok..."
+                                placeholderTextColor={colors.textMuted}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                keyboardType="url"
+                            />
+                            {videoUrl.length > 0 && (
+                                <TouchableOpacity onPress={() => setVideoUrl('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                    <X size={16} color={colors.textMuted} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        {isExternalVideoLink(normalizeVideoLink(videoUrl)) && isValidWebUrl(videoUrl) && (
+                            <ExternalVideoCard
+                                url={normalizeVideoLink(videoUrl)}
+                                style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginTop: 4 }}
+                            />
+                        )}
+
                         {/* Submit */}
                         <TouchableOpacity style={[styles.submitButton, isSaving && { opacity: 0.7 }]} onPress={handleSubmit} disabled={isSaving}>
                             {isSaving ? (
-                                <ActivityIndicator color="#000" />
+                                <ActivityIndicator color={mode === 'dark' ? '#000' : '#FFF'} />
                             ) : (
                                 <>
-                                    {!initialData && <Plus size={18} color="#000" />}
+                                    {!initialData && <Plus size={18} color={mode === 'dark' ? '#000' : '#FFF'} />}
                                     <Text style={styles.submitButtonText}>{initialData ? 'Guardar Cambios' : 'Agregar Ejercicio'}</Text>
                                 </>
                             )}
@@ -538,7 +606,8 @@ const AddExerciseForm = ({ visible, onClose, onAdd, initialData }: AddExerciseFo
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ExerciseScreen() {
-    const { colors } = useTheme();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { allExercises, muscleGroups, refreshMetadata, addExercise, updateExercise } = usePlans();
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<FilterOption>('Todos');
@@ -565,7 +634,10 @@ export default function ExerciseScreen() {
         if (filter === 'Personalizados') {
             result = result.filter((e) => e.isCustom);
         } else if (filter !== 'Todos') {
-            result = result.filter((e) => e.muscleGroup === filter);
+            result = result.filter((e) => {
+                const effectiveGroup = sanitizeExerciseGroup(e.name, e.muscleGroup);
+                return isSameMuscleGroup(effectiveGroup, filter);
+            });
         }
 
         if (search.trim()) {
@@ -589,7 +661,10 @@ export default function ExerciseScreen() {
 
         return muscleGroups.map((group: string) => ({
             title: group,
-            data: filteredExercises.filter((e) => e.muscleGroup === group),
+            data: filteredExercises.filter((e) => {
+                const effectiveGroup = sanitizeExerciseGroup(e.name, e.muscleGroup);
+                return isSameMuscleGroup(effectiveGroup, group);
+            }),
         })).filter((s) => s.data.length > 0);
     }, [filteredExercises, filter, search, muscleGroups]);
 
@@ -663,11 +738,11 @@ export default function ExerciseScreen() {
 
                 {/* Search */}
                 <View style={styles.searchContainer}>
-                    <Search size={18} color={Colors.textMuted} style={styles.searchIcon} />
+                    <Search size={18} color={colors.textMuted} style={styles.searchIcon} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="Buscar por nombre, músculo o equipo..."
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={search}
                         onChangeText={setSearch}
                     />
@@ -676,7 +751,7 @@ export default function ExerciseScreen() {
                             style={styles.searchClear}
                             onPress={() => setSearch('')}
                         >
-                            <X size={14} color={Colors.textMuted} />
+                            <X size={14} color={colors.textMuted} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -693,7 +768,7 @@ export default function ExerciseScreen() {
                         const chipColor =
                             item !== 'Todos' && item !== 'Personalizados'
                                 ? MuscleGroupColors[item]
-                                : Colors.primary;
+                                : colors.primary;
 
                         return (
                             <TouchableOpacity
@@ -731,7 +806,7 @@ export default function ExerciseScreen() {
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
                         <View style={styles.emptyIconContainer}>
-                            <Search size={32} color={Colors.textMuted} />
+                            <Search size={32} color={colors.textMuted} />
                         </View>
                         <Text style={styles.emptyText}>No se encontraron ejercicios</Text>
                         <Text style={styles.emptySubtext}>
@@ -747,7 +822,7 @@ export default function ExerciseScreen() {
                 onPress={() => setShowAddForm(true)}
                 activeOpacity={0.85}
             >
-                <Plus size={24} color="#000" />
+                <Plus size={24} color={mode === 'dark' ? '#000' : '#FFF'} />
             </TouchableOpacity>
 
             {/* Add/Edit Exercise Form Modal */}
@@ -774,10 +849,10 @@ export default function ExerciseScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         paddingHorizontal: Spacing.md,
@@ -791,13 +866,13 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.md,
     },
     title: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 32,
         fontWeight: '800',
         letterSpacing: -0.5,
     },
     subtitle: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         marginTop: 4,
     },
@@ -805,23 +880,23 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: 'rgba(191, 255, 10, 0.1)',
+        backgroundColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.1)' : 'rgba(29, 78, 216, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(191, 255, 10, 0.2)',
+        borderColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.2)' : 'rgba(29, 78, 216, 0.2)',
     },
 
     // ── Search ────────────────────────────────────────────────────────────────
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.cardBg,
+        backgroundColor: colors.surface,
         borderRadius: borderRadius.lg,
         paddingHorizontal: Spacing.md,
         marginBottom: Spacing.md,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     searchIcon: {
         marginRight: Spacing.sm,
@@ -829,14 +904,14 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         height: 48,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
     },
     searchClear: {
         width: 28,
         height: 28,
         borderRadius: 14,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_container_low,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -849,13 +924,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: borderRadius.full,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: colors.surface,
         marginRight: Spacing.sm,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     filterChipText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 13,
         fontWeight: '600',
     },
@@ -900,12 +975,12 @@ const styles = StyleSheet.create({
 
     // ── Exercise Card ─────────────────────────────────────────────────────────
     exerciseCard: {
-        backgroundColor: Colors.cardBg,
+        backgroundColor: colors.surface,
         padding: Spacing.md,
         borderRadius: borderRadius.lg,
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         overflow: 'hidden',
     },
     cardHeader: {
@@ -930,7 +1005,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     exerciseName: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         fontWeight: '700',
         letterSpacing: -0.2,
@@ -942,7 +1017,7 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     exerciseEquipment: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 12,
     },
     cardHeaderRight: {
@@ -954,7 +1029,7 @@ const styles = StyleSheet.create({
         width: 28,
         height: 28,
         borderRadius: 14,
-        backgroundColor: 'rgba(255, 69, 58, 0.12)',
+        backgroundColor: mode === 'dark' ? 'rgba(255, 69, 58, 0.12)' : 'rgba(239, 68, 68, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -979,23 +1054,23 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     muscleTag: {
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_container_low,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: borderRadius.full,
     },
     muscleTagAccent: {
-        backgroundColor: 'rgba(191, 255, 10, 0.08)',
+        backgroundColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.12)' : 'rgba(29, 78, 216, 0.1)',
         borderWidth: 1,
-        borderColor: 'rgba(191, 255, 10, 0.15)',
+        borderColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.25)' : 'rgba(29, 78, 216, 0.2)',
     },
     muscleTagText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 11,
         fontWeight: '500',
     },
     muscleTagTextAccent: {
-        color: Colors.primary,
+        color: colors.primary,
     },
 
     // ── Expanded Detail ───────────────────────────────────────────────────────
@@ -1003,7 +1078,7 @@ const styles = StyleSheet.create({
         marginTop: Spacing.md,
         paddingTop: Spacing.md,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: colors.border,
     },
     detailSection: {
         marginBottom: Spacing.md,
@@ -1018,13 +1093,13 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     detailLabel: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 13,
         fontWeight: '700',
         letterSpacing: 0.2,
     },
     detailText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 13,
         lineHeight: 20,
         paddingLeft: 4,
@@ -1039,12 +1114,12 @@ const styles = StyleSheet.create({
         width: 5,
         height: 5,
         borderRadius: 3,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         marginTop: 6,
         marginRight: 8,
     },
     benefitItem: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 13,
         lineHeight: 20,
         flex: 1,
@@ -1060,20 +1135,20 @@ const styles = StyleSheet.create({
         width: 72,
         height: 72,
         borderRadius: 36,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: Spacing.md,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     emptyText: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 16,
         fontWeight: '600',
     },
     emptySubtext: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
         marginTop: 6,
     },
@@ -1086,12 +1161,12 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
         ...Platform.select({
             ios: {
-                shadowColor: Colors.primary,
+                shadowColor: colors.primary,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.4,
                 shadowRadius: 12,
@@ -1100,7 +1175,7 @@ const styles = StyleSheet.create({
                 elevation: 8,
             },
             web: {
-                boxShadow: `0px 4px 12px ${Colors.primary}66`, // 0.4 opacity is approx 66 in hex
+                boxShadow: `0px 4px 12px ${colors.primary}66`,
             },
         }),
     },
@@ -1112,7 +1187,7 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     modalContent: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderTopLeftRadius: borderRadius.xl,
         borderTopRightRadius: borderRadius.xl,
         maxHeight: '92%',
@@ -1122,7 +1197,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
         alignSelf: 'center',
         marginBottom: Spacing.md,
     },
@@ -1139,7 +1214,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     modalTitle: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 20,
         fontWeight: '800',
         letterSpacing: -0.3,
@@ -1148,7 +1223,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_container_low,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1156,7 +1231,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.md,
     },
     formLabel: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 12,
         fontWeight: '600',
         marginBottom: 6,
@@ -1165,17 +1240,35 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     formInput: {
-        backgroundColor: Colors.cardBg,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
         borderRadius: borderRadius.md,
         padding: Spacing.md,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     formTextArea: {
         minHeight: 80,
         textAlignVertical: 'top',
+    },
+    orDividerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginVertical: 10,
+    },
+    orDividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: colors.border,
+    },
+    orDividerText: {
+        color: colors.textMuted,
+        fontSize: 11,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     formChipRow: {
         flexDirection: 'row',
@@ -1185,13 +1278,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: borderRadius.full,
-        backgroundColor: Colors.cardBg,
+        backgroundColor: colors.surface,
         marginRight: Spacing.sm,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     formChipText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 13,
         fontWeight: '600',
     },
@@ -1200,7 +1293,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     submitButton: {
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         borderRadius: borderRadius.lg,
         paddingVertical: 14,
         alignItems: 'center',
@@ -1210,7 +1303,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     submitButtonText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontSize: 16,
         fontWeight: '700',
     },

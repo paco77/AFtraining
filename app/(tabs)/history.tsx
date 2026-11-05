@@ -8,7 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 export default function HistoryScreen() {
-    const { colors } = useTheme();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
     const { fetchHistory } = usePlans();
     const router = useRouter();
 
@@ -304,21 +305,21 @@ export default function HistoryScreen() {
 
                 {/* FAB */}
                 <TouchableOpacity style={styles.fab} activeOpacity={0.8}>
-                    <Plus size={28} color="#000" />
+                    <Plus size={28} color={mode === 'dark' ? '#000' : '#FFF'} />
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     topHeader: {
         flexDirection: 'row',
@@ -336,14 +337,14 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontFamily: Fonts.display,
         fontSize: 16,
-        color: Colors.text,
+        color: colors.text,
         fontWeight: '800',
         letterSpacing: 1,
     },
     headerSubtitle: {
         fontFamily: Fonts.body,
         fontSize: 10,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         letterSpacing: 1,
     },
@@ -357,15 +358,17 @@ const styles = StyleSheet.create({
     },
     // Summary Card
     summaryCard: {
-        backgroundColor: Colors.surface_container,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         padding: Spacing.md,
         marginBottom: 24,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     summaryLabel: {
         fontFamily: Fonts.body,
         fontSize: 10,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         letterSpacing: 1,
         marginBottom: 8,
@@ -379,7 +382,7 @@ const styles = StyleSheet.create({
     summaryGiantNumber: {
         fontFamily: Fonts.display,
         fontSize: 48,
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '900',
         marginRight: 12,
         lineHeight: 52,
@@ -387,7 +390,7 @@ const styles = StyleSheet.create({
     summaryDescText: {
         fontFamily: Fonts.body,
         fontSize: 15,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '500',
     },
     statsBtnWrapper: {
@@ -400,7 +403,7 @@ const styles = StyleSheet.create({
     },
     statsBorderLeft: {
         width: 4,
-        backgroundColor: Colors.tertiary,
+        backgroundColor: colors.tertiary,
         height: '100%',
         position: 'absolute',
         left: 0,
@@ -420,14 +423,14 @@ const styles = StyleSheet.create({
     statsTitle: {
         fontFamily: Fonts.headline,
         fontSize: 14,
-        color: Colors.tertiary,
+        color: colors.tertiary,
         fontWeight: '800',
         marginBottom: 2,
     },
     statsSubtitle: {
         fontFamily: Fonts.body,
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     // Calendar Strip
     calendarContainer: {
@@ -442,7 +445,7 @@ const styles = StyleSheet.create({
     calendarMonthText: {
         fontFamily: Fonts.headline,
         fontSize: 18,
-        color: Colors.text,
+        color: colors.text,
         fontWeight: '800',
     },
     calendarNavBtns: {
@@ -453,9 +456,11 @@ const styles = StyleSheet.create({
         width: 28,
         height: 28,
         borderRadius: 8,
-        backgroundColor: Colors.surface_container_low,
+        backgroundColor: mode === 'dark' ? (colors.surface_container_low || colors.surface) : colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     calendarStripContent: {
         gap: 8,
@@ -465,50 +470,50 @@ const styles = StyleSheet.create({
         width: 58,
         height: 72,
         borderRadius: 12,
-        backgroundColor: Colors.surface_container_low, // dark inactive
+        backgroundColor: mode === 'dark' ? (colors.surface_container_low || colors.surface) : colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.surface_lowest,
+        borderColor: colors.border,
     },
     dayCardSelected: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     dayName: {
         fontFamily: Fonts.body,
         fontSize: 10,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         marginBottom: 4,
     },
     dayNameSelected: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     dayNumber: {
         fontFamily: Fonts.display,
         fontSize: 18,
-        color: Colors.text,
+        color: colors.text,
         fontWeight: '900',
     },
     dayNumberSelected: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     daySelectionDot: {
         width: 4,
         height: 4,
         borderRadius: 2,
-        backgroundColor: '#000',
+        backgroundColor: mode === 'dark' ? '#000' : '#FFF',
         marginTop: 4,
     },
     // Session Card
     sessionCard: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         padding: Spacing.md,
         marginBottom: 16,
         borderWidth: 1,
-        borderColor: Colors.outline,
+        borderColor: colors.border,
     },
     sessionCardHeader: {
         flexDirection: 'row',
@@ -519,7 +524,7 @@ const styles = StyleSheet.create({
     sessionDateText: {
         fontFamily: Fonts.body,
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         letterSpacing: 0.5,
         textTransform: 'uppercase',
@@ -539,14 +544,14 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.body,
         fontSize: 9,
         fontWeight: '700',
-        color: Colors.tertiary,
+        color: colors.tertiary,
         letterSpacing: 0.5,
     },
     sessionTitle: {
         fontFamily: Fonts.display,
         fontSize: 22,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 16,
     },
     metricsRow: {
@@ -558,15 +563,17 @@ const styles = StyleSheet.create({
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surface_lowest,
+        backgroundColor: mode === 'dark' ? colors.surface_lowest : colors.surface_container_low,
         padding: 12,
         borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     metricIconCircle: {
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 10,
@@ -574,7 +581,7 @@ const styles = StyleSheet.create({
     metricLabel: {
         fontFamily: Fonts.body,
         fontSize: 9,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         letterSpacing: 1,
         marginBottom: 2,
@@ -582,7 +589,7 @@ const styles = StyleSheet.create({
     metricValue: {
         fontFamily: Fonts.headline,
         fontSize: 14,
-        color: Colors.text,
+        color: colors.text,
         fontWeight: '900',
     },
     sessionCardFooter: {
@@ -591,12 +598,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingTop: 16,
         borderTopWidth: 1,
-        borderTopColor: Colors.surface_lowest,
+        borderTopColor: colors.border,
     },
     exercCountText: {
         fontFamily: Fonts.body,
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '500',
     },
     // Empty State
@@ -609,25 +616,25 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 24,
-        backgroundColor: Colors.surface_container_low,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: Colors.outline,
+        borderColor: colors.border,
     },
     emptyTitle: {
         fontFamily: Fonts.display,
         fontSize: 20,
         fontWeight: '900',
-        color: Colors.text,
+        color: colors.text,
     },
     emptySubtitle: {
         fontFamily: Fonts.body,
         fontSize: 14,
         textAlign: 'center',
         marginTop: 8,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         paddingHorizontal: 40,
     },
     // FAB
@@ -638,10 +645,10 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.4,
         shadowRadius: 16,

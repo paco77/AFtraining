@@ -12,6 +12,7 @@ import {
   Home,
   LogOut,
   Menu,
+  Pencil,
   User as UserIcon,
   Users,
   X
@@ -32,6 +33,7 @@ export default function TabLayout() {
   if (!currentUser) return <Redirect href="/login" />;
 
   const isCoach = currentUser?.role === 'coach';
+  const isIndependent = currentUser?.role === 'independiente';
   const isSessionActive = activeSessionDay !== null;
 
   const navigateTo = (path: string) => {
@@ -55,8 +57,8 @@ export default function TabLayout() {
   return (
     <>
       <Tabs
-        sceneContainerStyle={{ paddingBottom: insets.bottom }}
         screenOptions={{
+          sceneStyle: { paddingBottom: insets.bottom },
           headerTitle: () => (
             <View style={{ alignItems: 'center' }}>
               {currentUser?.profilePhotoUrl ? (
@@ -112,34 +114,36 @@ export default function TabLayout() {
         }} />
         <Tabs.Screen name="workout" options={{
           title: 'Entrenar',
-          href: isCoach ? null : '/(tabs)/workout',
           tabBarIcon: ({ color, size }) => <Dumbbell size={size} color={color} />
-        }} />
-        <Tabs.Screen name="rest" options={{
-          title: 'Descanso',
-          href: null
-        }} />
-        <Tabs.Screen name="history" options={{
-          title: 'Historial',
-          href: null
         }} />
         <Tabs.Screen name="exercises" options={{
           title: 'Biblioteca',
-          href: null
-        }} />
-        <Tabs.Screen name="cardio" options={{
-          title: 'Mapa & Running',
-          href: null
+          tabBarIcon: ({ color, size }) => <BookOpen size={size} color={color} />
         }} />
         <Tabs.Screen name="clients" options={{
           title: 'Clientes',
-          href: isCoach ? '/(tabs)/clients' : null,
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />
         }} />
         <Tabs.Screen name="profile" options={{
           title: 'Mi Perfil',
           headerLeft: () => null,
           tabBarIcon: ({ color, size }) => <UserIcon size={size} color={color} />
+        }} />
+        <Tabs.Screen name="history" options={{
+          title: 'Historial',
+          tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color} />
+        }} />
+        <Tabs.Screen name="cardio" options={{
+          title: 'Mapa & Running',
+        }} />
+        <Tabs.Screen name="steps" options={{
+          title: 'Pasos Diarios',
+        }} />
+        <Tabs.Screen name="rest" options={{
+          title: 'Descanso',
+        }} />
+        <Tabs.Screen name="new-client" options={{
+          title: 'Nuevo Cliente',
         }} />
       </Tabs>
 
@@ -170,7 +174,7 @@ export default function TabLayout() {
                 <View style={{ alignItems: 'center', marginTop: 12 }}>
                   <Text style={[styles.menuUser, { color: colors.text }]}>{currentUser?.name}</Text>
                   <Text style={[styles.menuRole, { color: colors.textMuted }]}>
-                    {isCoach ? 'Entrenador' : 'Atleta'}
+                    {isCoach ? 'Entrenador' : isIndependent ? 'Independiente' : 'Atleta'}
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                     <TouchableOpacity
@@ -229,7 +233,14 @@ export default function TabLayout() {
                 <>
                   <NavItem icon={ClipboardList} label="Mis Planes de entrenamiento" path="/(tabs)/plan" />
                   <NavItem icon={Apple} label="Mis Planes de Alimentación" path="/(tabs)/nutrition" />
+                  <NavItem icon={Dumbbell} label="Mi Entrenamiento" path="/(tabs)/workout" color={colors.accent} />
                   <NavItem icon={Users} label="Mis Clientes" path="/(tabs)/clients" />
+                </>
+              ) : isIndependent ? (
+                <>
+                  <NavItem icon={ClipboardList} label="Mis Planes de entrenamiento" path="/(tabs)/plan" />
+                  <NavItem icon={Apple} label="Mis Planes de Alimentación" path="/(tabs)/nutrition" />
+                  <NavItem icon={Dumbbell} label="Elegir sesión de entrenamiento" path="/(tabs)/workout" color={colors.accent} />
                 </>
               ) : (
                 <>
@@ -240,9 +251,9 @@ export default function TabLayout() {
                 </>
               )}
 
-              {isCoach && (
-                <NavItem icon={BookOpen} label="Biblioteca de Ejercicios" path="/(tabs)/exercises" />
-              )}
+              <NavItem icon={BookOpen} label="Biblioteca de Ejercicios" path="/(tabs)/exercises" />
+
+              <NavItem icon={Pencil} label="Editar Mi Perfil" path="/(tabs)/profile?edit=true" />
 
               <View style={{ height: 40 }} />
             </ScrollView>

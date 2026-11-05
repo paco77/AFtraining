@@ -1,14 +1,14 @@
 
+import { GlobalSessionTimer } from '@/components/GlobalSessionTimer';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { Client } from '@/constants/UserTypes';
+import { useOutdoorActivity } from '@/context/OutdoorActivityContext';
 import { usePlans } from '@/context/PlanContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import Storage from '@/services/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Tabs, useRouter } from 'expo-router';
-import { useOutdoorActivity } from '@/context/OutdoorActivityContext';
-import Svg, { Path, Polyline as SvgPolyline } from 'react-native-svg';
 import {
   Activity,
   Apple,
@@ -25,10 +25,10 @@ import {
   LogOut,
   Mail,
   Navigation,
+  Pencil,
   Play,
   PlayCircle,
   Search,
-  Settings,
   User as UserIcon,
   Users,
   X,
@@ -36,11 +36,11 @@ import {
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   Dimensions,
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -51,13 +51,14 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path, Polyline as SvgPolyline } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const { plans, fetchPlans, activeSessionDay, finishWorkoutSession, sessionStartTime } = usePlans();
+  const { colors, mode } = useTheme();
+  const { plans, fetchPlans, activeSessionDay, activePlanId, finishWorkoutSession, discardWorkoutSession, sessionStartTime } = usePlans();
   const { currentUser, clients, logout } = useUser();
   const { activities: outdoorActivities } = useOutdoorActivity();
   const [showCoachInfo, setShowCoachInfo] = useState(false);
@@ -65,39 +66,73 @@ export default function HomeScreen() {
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState('');
-  const scrollViewRef = React.useRef<ScrollView>(null);
+  const [isClientsExpanded, setIsClientsExpanded] = useState(false);
+  const scrollViewRef = React.useRef<any>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
+  const [optionsPush, setOptionsPush] = useState<{
+    title: string;
+    message: string;
+    userHeader?: boolean;
+    isDestructive?: boolean;
+    options: Array<{
+      text: string;
+      icon?: any;
+      style?: 'default' | 'destructive' | 'cancel' | 'primary';
+      onPress: () => void;
+    }>;
+  } | null>(null);
+
   const handleAccountMenu = () => {
-    Alert.alert(
-      currentUser?.name || 'Mi Cuenta',
-      'Selecciona una opción:',
-      [
+    setOptionsPush({
+      title: currentUser?.name || 'Mi Perfil',
+      message: currentUser?.email || 'Gestiona tu cuenta y configuración',
+      userHeader: true,
+      options: [
         {
           text: 'Ver Mi Perfil',
-          onPress: () => router.push('/(tabs)/profile')
+          icon: UserIcon,
+          style: 'default',
+          onPress: () => {
+            setOptionsPush(null);
+            router.push('/(tabs)/profile');
+          }
         },
         {
           text: 'Cerrar Sesión',
+          icon: LogOut,
           style: 'destructive',
           onPress: () => {
-            Alert.alert(
-              'Cerrar Sesión',
-              '¿Está seguro que desea finalizar sesión?',
-              [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Sí, cerrar sesión', style: 'destructive', onPress: () => logout() }
+            setOptionsPush({
+              title: 'Cerrar Sesión',
+              message: '¿Está seguro que desea finalizar sesión en su cuenta?',
+              isDestructive: true,
+              options: [
+                {
+                  text: 'Sí, cerrar sesión',
+                  style: 'destructive',
+                  onPress: () => {
+                    setOptionsPush(null);
+                    logout();
+                  }
+                },
+                {
+                  text: 'Cancelar',
+                  style: 'cancel',
+                  onPress: () => setOptionsPush(null)
+                }
               ]
-            );
+            });
           }
         },
         {
           text: 'Cancelar',
-          style: 'cancel'
+          style: 'cancel',
+          onPress: () => setOptionsPush(null)
         }
       ]
-    );
+    });
   };
 
   useEffect(() => {
@@ -141,6 +176,7 @@ export default function HomeScreen() {
 
   const isCoach = currentUser?.role === 'coach';
   const isClient = currentUser?.role === 'client';
+  const isIndependent = currentUser?.role === 'independiente';
 
   const activePlan = React.useMemo(() => {
     if (!currentUser) return null;
@@ -154,6 +190,8 @@ export default function HomeScreen() {
   const loggedDays = activePlan?.logs?.length ?? 0;
   const totalSessions = activePlan?.logs?.reduce((sum, l) => sum + (l.sessions?.length ?? 0), 0) ?? 0;
   const totalDays = activePlan?.days.length ?? 0;
+
+  const styles = React.useMemo(() => getStyles(colors), [mode, colors]);
 
   const lastLog = activePlan?.logs && activePlan.logs.length > 0 ? activePlan.logs[activePlan.logs.length - 1] : null;
   const lastLogDay = lastLog ? activePlan?.days.find(d => d.dayNumber === lastLog.dayNumber) : null;
@@ -180,7 +218,7 @@ export default function HomeScreen() {
             {/* Header Superior Personalizado */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl }}>
               <Image
-                source={require('../../assets/images/logo.png')}
+                source={mode === 'light' ? require('../../assets/images/logo-light.png') : require('../../assets/images/logo.png')}
                 style={{ width: 160, height: 50, marginLeft: -12 }}
                 resizeMode="contain"
               />
@@ -212,18 +250,17 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Coach Profile Info */}
             <View style={{ alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.lg }}>
               {currentUser?.profilePhotoUrl ? (
-                <Image source={{ uri: currentUser.profilePhotoUrl }} style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 16, borderWidth: 2, borderColor: Colors.primary }} />
+                <Image source={{ uri: currentUser.profilePhotoUrl }} style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 16, borderWidth: 2, borderColor: colors.primary }} />
               ) : (
-                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
                   <Text style={{ fontFamily: Fonts.headline, fontSize: 24, fontWeight: '900', color: '#000' }}>AF</Text>
                 </View>
               )}
-              <Text style={{ color: Colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 }}>HEAD COACH</Text>
-              <Text style={{ color: Colors.text, fontSize: 24, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 6 }}>{currentUser?.name || 'Marcos Valente'}</Text>
-              <Text style={{ color: Colors.textMuted, fontSize: 13, textAlign: 'center', paddingHorizontal: 20 }}>Especialista en Hipertrofia & Rendimiento Deportivo</Text>
+              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 }}>HEAD COACH</Text>
+              <Text style={{ color: colors.text, fontSize: 24, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 6 }}>{currentUser?.name || 'Marcos Valente'}</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingHorizontal: 20 }}>Especialista en Hipertrofia & Rendimiento Deportivo</Text>
             </View>
 
             {/* Herramientas Personales */}
@@ -253,107 +290,127 @@ export default function HomeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 24 }}
+                style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 12 }}
                 onPress={() => router.push('/(tabs)/workout')}
               >
                 <PlayCircle size={28} color="#60A5FA" style={{ marginBottom: 12 }} />
                 <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 4 }}>Mi Entrenamiento</Text>
                 <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>COMENZAR SESIÓN PERSONAL</Text>
               </TouchableOpacity>
-            </View>
 
-            <TouchableOpacity
-              style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 24 }}
-              onPress={() => router.push('/(tabs)/exercises')}
-            >
-              <BookOpen size={28} color="#60A5FA" style={{ marginBottom: 12 }} />
-              <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 4 }}>Biblioteca de Ejercicios</Text>
-              <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>EXPLORAR TODOS LOS EJERCICIOS</Text>
-            </TouchableOpacity>
-
-            <View style={styles.coachDividerLine} />
-
-            {/* Gestión de Clientes */}
-            <View style={[styles.sectionHeaderNew, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-              <View>
-                <Text style={styles.sectionTitleNew}>Gestión de Clientes</Text>
-                <Text style={styles.sectionTitleSub}>{clients.length} ACTIVOS ESTA SEMANA</Text>
-              </View>
               <TouchableOpacity
-                style={{ backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 }}
-                onPress={() => router.push('/(tabs)/new-client')}
+                style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 24 }}
+                onPress={() => router.push('/(tabs)/exercises')}
               >
-                <Text style={{ fontFamily: Fonts.headline, fontSize: 12, fontWeight: '800', color: '#000' }}>+ AÑADIR</Text>
+                <BookOpen size={28} color="#60A5FA" style={{ marginBottom: 12 }} />
+                <Text style={{ color: Colors.text, fontSize: 16, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 4 }}>Biblioteca de Ejercicios</Text>
+                <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>EXPLORAR TODOS LOS EJERCICIOS</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={{ paddingHorizontal: Spacing.lg, marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: colors.border }}>
-                <Search size={18} color={colors.textMuted} />
-                <TextInput
-                  style={{ flex: 1, marginLeft: 8, color: colors.text, fontSize: 14 }}
-                  placeholder="Buscar por nombre o usuario..."
-                  placeholderTextColor={colors.textMuted}
-                  value={clientSearchQuery}
-                  onChangeText={setClientSearchQuery}
-                  onFocus={() => {
-                    setTimeout(() => {
-                      scrollViewRef.current?.scrollToEnd({ animated: true });
-                    }, 100);
-                  }}
-                />
-                {clientSearchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setClientSearchQuery('')}>
-                    <X size={16} color={colors.textMuted} />
+            <View style={styles.coachDividerLine} />
+
+            {/* Gestión de Clientes (Tarjeta Desplegable) */}
+            <View style={{ marginHorizontal: Spacing.lg, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 24, overflow: 'hidden' }}>
+              <TouchableOpacity
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }}
+                onPress={() => setIsClientsExpanded(!isClientsExpanded)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ backgroundColor: 'rgba(93, 166, 255, 0.1)', padding: 10, borderRadius: 12 }}>
+                    <Users size={24} color={colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={{ fontFamily: Fonts.headline, fontSize: 16, fontWeight: '800', color: colors.text }}>Gestión de Clientes</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{clients.length} ACTIVOS ESTA SEMANA</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  {isClientsExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
+                </View>
+              </TouchableOpacity>
+
+              {isClientsExpanded && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                  {/* Botón Añadir */}
+                  <TouchableOpacity
+                    style={{ backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, marginBottom: 16, alignItems: 'center' }}
+                    onPress={() => router.push('/(tabs)/new-client')}
+                  >
+                    <Text style={{ fontFamily: Fonts.headline, fontSize: 14, fontWeight: '800', color: '#000' }}>+ AÑADIR NUEVO CLIENTE</Text>
                   </TouchableOpacity>
-                )}
-              </View>
-            </View>
 
-            <View style={styles.clientsList}>
-              {clients.length === 0 ? (
-                <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No tienes clientes todavía.</Text>
-              ) : clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).length === 0 ? (
-                <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No se encontraron clientes.</Text>
-              ) : (
-                clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).map(client => {
-                  const isExpanded = expandedClientId === client.id;
-                  return (
-                    <View key={client.id} style={styles.clientAccordionCard}>
-                      <TouchableOpacity
-                        style={styles.clientAccordionHeader}
-                        onPress={() => setExpandedClientId(isExpanded ? null : client.id)}
-                      >
-                        <View style={styles.clientAvatarDark}>
-                          <UserIcon size={20} color={colors.textMuted} />
-                        </View>
-                        <View style={styles.clientAccordionInfo}>
-                          <Text style={styles.clientAccordionName}>{client.name}</Text>
-                          <Text style={styles.clientAccordionMeta}>{client.objectives || 'OBJETIVO PENDIENTE'}</Text>
-                        </View>
-                        {isExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
+                  {/* Barra de Búsqueda */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+                    <Search size={18} color={colors.textMuted} />
+                    <TextInput
+                      style={{ flex: 1, marginLeft: 8, color: colors.text, fontSize: 14 }}
+                      placeholder="Buscar por nombre o usuario..."
+                      placeholderTextColor={colors.textMuted}
+                      value={clientSearchQuery}
+                      onChangeText={setClientSearchQuery}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollToEnd({ animated: true });
+                        }, 100);
+                      }}
+                    />
+                    {clientSearchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setClientSearchQuery('')}>
+                        <X size={16} color={colors.textMuted} />
                       </TouchableOpacity>
+                    )}
+                  </View>
 
-                      {isExpanded && (
-                        <View style={styles.evoActionsRow}>
-                          <TouchableOpacity
-                            style={styles.evoActionBtn}
-                            onPress={() => router.push({ pathname: '/(tabs)/plan', params: { clientId: client.id } })}
-                          >
-                            <Text style={styles.evoActionBtnText}>ASIGNAR RUTINA</Text>
-                          </TouchableOpacity>
+                  {/* Lista de Clientes */}
+                  <View style={{ gap: 12 }}>
+                    {clients.length === 0 ? (
+                      <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No tienes clientes todavía.</Text>
+                    ) : clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).length === 0 ? (
+                      <Text style={{ color: colors.textMuted, textAlign: 'center' }}>No se encontraron clientes.</Text>
+                    ) : (
+                      clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || (c.username && c.username.toLowerCase().includes(clientSearchQuery.toLowerCase()))).map(client => {
+                        const isExpanded = expandedClientId === client.id;
+                        return (
+                          <View key={client.id} style={[styles.clientAccordionCard, { backgroundColor: colors.background }]}>
+                            <TouchableOpacity
+                              style={styles.clientAccordionHeader}
+                              onPress={() => setExpandedClientId(isExpanded ? null : client.id)}
+                            >
+                              <View style={styles.clientAvatarDark}>
+                                <UserIcon size={20} color={colors.textMuted} />
+                              </View>
+                              <View style={styles.clientAccordionInfo}>
+                                <Text style={styles.clientAccordionName}>{client.name}</Text>
+                                <Text style={styles.clientAccordionMeta}>{client.objectives || 'OBJETIVO PENDIENTE'}</Text>
+                              </View>
+                              {isExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
+                            </TouchableOpacity>
 
-                          <TouchableOpacity
-                            style={[styles.evoActionBtn, { marginTop: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}
-                            onPress={() => router.push({ pathname: '/client/[id]', params: { id: client.id } })}
-                          >
-                            <Text style={[styles.evoActionBtnText, { color: colors.text }]}>VER PERFIL Y PROGRESO</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })
+                            {isExpanded && (
+                              <View style={styles.evoActionsRow}>
+                                <TouchableOpacity
+                                  style={styles.evoActionBtn}
+                                  onPress={() => router.push({ pathname: '/(tabs)/plan', params: { clientId: client.id } })}
+                                >
+                                  <Text style={styles.evoActionBtnText}>ASIGNAR RUTINA</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[styles.evoActionBtn, { marginTop: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}
+                                  onPress={() => router.push({ pathname: '/client/[id]', params: { id: client.id } })}
+                                >
+                                  <Text style={[styles.evoActionBtnText, { color: colors.text }]}>VER PERFIL Y PROGRESO</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                </View>
               )}
             </View>
 
@@ -398,7 +455,7 @@ export default function HomeScreen() {
             {/* Header Superior Personalizado */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg }}>
               <Image
-                source={require('../../assets/images/logo.png')}
+                source={mode === 'light' ? require('../../assets/images/logo-light.png') : require('../../assets/images/logo.png')}
                 style={{ width: 160, height: 50, marginLeft: -12 }}
                 resizeMode="contain"
               />
@@ -440,14 +497,126 @@ export default function HomeScreen() {
                 </View>
               )}
               <View style={{ backgroundColor: Colors.primary + '18', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginBottom: 6 }}>
-                <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 }}>ATLETA AF</Text>
+                <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 }}>
+                  {isIndependent ? 'ATLETA INDEPENDIENTE' : 'ATLETA AF'}
+                </Text>
               </View>
               <Text style={{ color: Colors.text, fontSize: 24, fontWeight: '800', fontFamily: Fonts.headline, marginBottom: 4 }}>
                 Hola, {currentUser?.name?.split(' ')[0]}
               </Text>
 
+              {isIndependent && (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.primary + '50',
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    borderRadius: 20,
+                    marginTop: 6,
+                    marginBottom: 8,
+                  }}
+                  onPress={() => router.push({ pathname: '/(tabs)/profile', params: { edit: 'true' } })}
+                  activeOpacity={0.8}
+                >
+                  <Pencil size={13} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                    Editar Perfil / Datos
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* ── Banner de Sesión en Curso ── */}
+              {activeSessionDay !== null && activePlan && String(activePlan.id) === String(activePlanId) && (
+                <View style={{
+                  width: '100%',
+                  marginTop: 16,
+                  marginBottom: 8,
+                  backgroundColor: colors.surface,
+                  borderRadius: 16,
+                  borderWidth: 1.5,
+                  borderColor: colors.primary,
+                  padding: 16,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 8,
+                  elevation: 6
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#22C55E' }} />
+                      <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 13, letterSpacing: 1 }}>SESIÓN EN CURSO</Text>
+                    </View>
+                    <View style={{ backgroundColor: colors.primary + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                      <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>Día {activeSessionDay}</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 12 }}>
+                    Tienes un entrenamiento activo sin finalizar.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        backgroundColor: colors.primary,
+                        paddingVertical: 12,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      onPress={() => router.push('/(tabs)/workout')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: '#000', fontWeight: '800', fontSize: 13, letterSpacing: 0.5 }}>CONTINUAR SESIÓN</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: (colors.danger || '#EF4444') + '15',
+                        borderColor: (colors.danger || '#EF4444') + '50',
+                        borderWidth: 1,
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      onPress={() => {
+                        setOptionsPush({
+                          title: "Descartar Sesión",
+                          message: "¿Deseas descartar esta sesión activa de entrenamiento?",
+                          isDestructive: true,
+                          options: [
+                            {
+                              text: "Descartar",
+                              style: "destructive",
+                              onPress: () => {
+                                setOptionsPush(null);
+                                discardWorkoutSession();
+                              }
+                            },
+                            {
+                              text: "Cancelar",
+                              style: "cancel",
+                              onPress: () => setOptionsPush(null)
+                            }
+                          ]
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: colors.danger || '#EF4444', fontWeight: '700', fontSize: 13 }}>Descartar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* ── Tarjeta Profesional del Coach Asignado ────────────── */}
-              {(currentUser as Client)?.coach && (() => {
+              {!isIndependent && (currentUser as Client)?.coach && (() => {
                 const coachObj = (currentUser as Client).coach as any;
                 const coachName = coachObj?.name || 'Tu Coach';
                 const coachEmail = coachObj?.email || '';
@@ -551,6 +720,7 @@ export default function HomeScreen() {
                   { icon: CalendarDays, label: 'Mis Planes de entrenamiento', path: '/(tabs)/plan' },
                   { icon: Apple, label: 'Mis Planes de Alimentación', path: '/(tabs)/nutrition' },
                   { icon: Dumbbell, label: 'Elegir sesión de entrenamiento', path: '/(tabs)/workout', color: '#2BB0FF' },
+                  { icon: BookOpen, label: 'Biblioteca de Ejercicios', path: '/(tabs)/exercises', color: '#60A5FA' },
                   // { icon: Navigation, label: 'Running & Caminata (Mapa GPS)', path: '/(tabs)/cardio', color: '#CCFF00' },
                   { icon: Footprints, label: 'Pasos Diarios', path: '/(tabs)/steps' },
                   { icon: UserIcon, label: 'Mi Perfil', path: '/(tabs)/profile' },
@@ -566,29 +736,7 @@ export default function HomeScreen() {
                       borderBottomColor: Colors.border + '40'
                     }}
                     onPress={() => {
-                      if (item.icon === Dumbbell && activeSessionDay !== null) {
-                        Alert.alert(
-                          "Sesión activa",
-                          "Tienes una sesión de entrenamiento iniciada. ¿Deseas terminarla para poder elegir otra?",
-                          [
-                            {
-                              text: "No, continuar sesión",
-                              onPress: () => router.push(item.path as any),
-                              style: "cancel"
-                            },
-                            {
-                              text: "Sí, terminar",
-                              onPress: () => {
-                                finishWorkoutSession();
-                                router.push(item.path as any);
-                              },
-                              style: "destructive"
-                            }
-                          ]
-                        );
-                      } else {
-                        router.push(item.path as any);
-                      }
+                      router.push(item.path as any);
                     }}
                   >
                     <View style={{
@@ -611,199 +759,164 @@ export default function HomeScreen() {
 
             {/* Tabla de Registro de Actividades GPS (Running / Caminata) */}
             {false && (
-            <View style={{ marginBottom: 28, marginHorizontal: Spacing.lg }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Navigation size={20} color="#CCFF00" />
-                  <Text style={{ fontFamily: Fonts.headline, fontSize: 18, fontWeight: '700', color: Colors.text }}>
-                    Registro de Recorridos (GPS)
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    backgroundColor: '#CCFF0018',
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: '#CCFF0035'
-                  }}
-                  onPress={() => router.push('/(tabs)/cardio')}
-                >
-                  <Play size={12} color="#CCFF00" fill="#CCFF00" />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#CCFF00' }}>NUEVO</Text>
-                </TouchableOpacity>
-              </View>
-
-              {outdoorActivities.length > 0 ? (
-                <View style={{ backgroundColor: Colors.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
-                  {/* Table Header */}
-                  <View style={{ flexDirection: 'row', backgroundColor: Colors.cardBg, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
-                    <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>FECHA</Text>
-                    <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>TIPO</Text>
-                    <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>DISTANCIA</Text>
-                    <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>TIEMPO</Text>
-                    <Text style={{ width: 44, fontSize: 11, fontWeight: '800', color: Colors.textMuted, textAlign: 'center', letterSpacing: 0.5 }}>MAPA</Text>
+              <View style={{ marginBottom: 28, marginHorizontal: Spacing.lg }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Navigation size={20} color="#CCFF00" />
+                    <Text style={{ fontFamily: Fonts.headline, fontSize: 18, fontWeight: '700', color: Colors.text }}>
+                      Registro de Recorridos (GPS)
+                    </Text>
                   </View>
-
-                  {/* Table Body Rows */}
-                  {outdoorActivities.slice(0, 5).map((act, index) => {
-                    const formattedDate = new Date(act.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-                    const minutes = Math.floor(act.durationSeconds / 60);
-                    const seconds = act.durationSeconds % 60;
-                    const timeStr = `${minutes}m ${seconds}s`;
-
-                    return (
-                      <View
-                        key={act.id}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingVertical: 12,
-                          paddingHorizontal: 12,
-                          borderBottomWidth: index === Math.min(outdoorActivities.length, 5) - 1 ? 0 : 1,
-                          borderBottomColor: Colors.border + '40'
-                        }}
-                      >
-                        {/* Fecha */}
-                        <Text style={{ flex: 1.1, fontSize: 12, fontWeight: '700', color: Colors.text }}>
-                          {formattedDate}
-                        </Text>
-
-                        {/* Tipo */}
-                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          {act.type === 'Running' && <Footprints size={12} color="#CCFF00" />}
-                          {act.type === 'Caminata' && <Activity size={12} color="#38BDF8" />}
-                          {act.type === 'Ciclismo' && <Zap size={12} color="#F59E0B" />}
-                          <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.text }}>{act.type}</Text>
-                        </View>
-
-                        {/* Distancia */}
-                        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: '#CCFF00' }}>
-                          {act.distanceKm} <Text style={{ fontSize: 10, color: Colors.textMuted }}>km</Text>
-                        </Text>
-
-                        {/* Tiempo */}
-                        <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: Colors.text }}>
-                          {timeStr}
-                        </Text>
-
-                        {/* Recorrido / Mapa (Mini preview SVG) */}
-                        <View style={{ width: 44, alignItems: 'center' }}>
-                          <View style={{ width: 36, height: 26, borderRadius: 6, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#334155' }}>
-                            <Svg width="30" height="20" viewBox="0 0 30 20">
-                              {act.coordinates && act.coordinates.length >= 2 ? (
-                                <SvgPolyline
-                                  points={act.coordinates.map((p, idx) => {
-                                    const x = Math.min(26, Math.max(4, (idx / act.coordinates.length) * 26));
-                                    const y = Math.min(16, Math.max(4, 10 + Math.sin(idx) * 6));
-                                    return `${x},${y}`;
-                                  }).join(' ')}
-                                  fill="none"
-                                  stroke="#CCFF00"
-                                  strokeWidth="2"
-                                />
-                              ) : (
-                                <Path d="M 4 10 Q 15 2 26 10" fill="none" stroke="#CCFF00" strokeWidth="2" />
-                              )}
-                            </Svg>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={{ backgroundColor: Colors.surface, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, gap: 8 }}>
-                  <Navigation size={24} color={Colors.textMuted} />
-                  <Text style={{ color: Colors.textMuted, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
-                    Aún no has registrado sesiones de Running o Caminata.
-                  </Text>
                   <TouchableOpacity
-                    style={{ backgroundColor: '#CCFF00', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, marginTop: 4 }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#CCFF0018',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#CCFF0035'
+                    }}
                     onPress={() => router.push('/(tabs)/cardio')}
                   >
-                    <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>INICIAR PRIMER RECORRIDO</Text>
+                    <Play size={12} color="#CCFF00" fill="#CCFF00" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#CCFF00' }}>NUEVO</Text>
                   </TouchableOpacity>
                 </View>
-              )}
-            </View>
+
+                {outdoorActivities.length > 0 ? (
+                  <View style={{ backgroundColor: Colors.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
+                    {/* Table Header */}
+                    <View style={{ flexDirection: 'row', backgroundColor: Colors.cardBg, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                      <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>FECHA</Text>
+                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>TIPO</Text>
+                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>DISTANCIA</Text>
+                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.5 }}>TIEMPO</Text>
+                      <Text style={{ width: 44, fontSize: 11, fontWeight: '800', color: Colors.textMuted, textAlign: 'center', letterSpacing: 0.5 }}>MAPA</Text>
+                    </View>
+
+                    {/* Table Body Rows */}
+                    {outdoorActivities.slice(0, 5).map((act, index) => {
+                      const formattedDate = new Date(act.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+                      const minutes = Math.floor(act.durationSeconds / 60);
+                      const seconds = act.durationSeconds % 60;
+                      const timeStr = `${minutes}m ${seconds}s`;
+
+                      return (
+                        <View
+                          key={act.id}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            paddingVertical: 12,
+                            paddingHorizontal: 12,
+                            borderBottomWidth: index === Math.min(outdoorActivities.length, 5) - 1 ? 0 : 1,
+                            borderBottomColor: Colors.border + '40'
+                          }}
+                        >
+                          {/* Fecha */}
+                          <Text style={{ flex: 1.1, fontSize: 12, fontWeight: '700', color: Colors.text }}>
+                            {formattedDate}
+                          </Text>
+
+                          {/* Tipo */}
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            {act.type === 'Running' && <Footprints size={12} color="#CCFF00" />}
+                            {act.type === 'Caminata' && <Activity size={12} color="#38BDF8" />}
+                            {act.type === 'Ciclismo' && <Zap size={12} color="#F59E0B" />}
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.text }}>{act.type}</Text>
+                          </View>
+
+                          {/* Distancia */}
+                          <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: '#CCFF00' }}>
+                            {act.distanceKm} <Text style={{ fontSize: 10, color: Colors.textMuted }}>km</Text>
+                          </Text>
+
+                          {/* Tiempo */}
+                          <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: Colors.text }}>
+                            {timeStr}
+                          </Text>
+
+                          {/* Recorrido / Mapa (Mini preview SVG) */}
+                          <View style={{ width: 44, alignItems: 'center' }}>
+                            <View style={{ width: 36, height: 26, borderRadius: 6, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#334155' }}>
+                              <Svg width="30" height="20" viewBox="0 0 30 20">
+                                {act.coordinates && act.coordinates.length >= 2 ? (
+                                  <SvgPolyline
+                                    points={act.coordinates.map((p, idx) => {
+                                      const x = Math.min(26, Math.max(4, (idx / act.coordinates.length) * 26));
+                                      const y = Math.min(16, Math.max(4, 10 + Math.sin(idx) * 6));
+                                      return `${x},${y}`;
+                                    }).join(' ')}
+                                    fill="none"
+                                    stroke="#CCFF00"
+                                    strokeWidth="2"
+                                  />
+                                ) : (
+                                  <Path d="M 4 10 Q 15 2 26 10" fill="none" stroke="#CCFF00" strokeWidth="2" />
+                                )}
+                              </Svg>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View style={{ backgroundColor: Colors.surface, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, gap: 8 }}>
+                    <Navigation size={24} color={Colors.textMuted} />
+                    <Text style={{ color: Colors.textMuted, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                      Aún no has registrado sesiones de Running o Caminata.
+                    </Text>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#CCFF00', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, marginTop: 4 }}
+                      onPress={() => router.push('/(tabs)/cardio')}
+                    >
+                      <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>INICIAR PRIMER RECORRIDO</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             )}
 
 
-            {/* Sesión de Hoy o Última Sesión */}
-            {/*activeSessionDay !== null ? (
-            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/workout')} activeOpacity={0.9}>
-              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
-                <View style={styles.sessionContent}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <View style={styles.sessionBadge}>
-                      <Text style={styles.sessionBadgeText}>SESIÓN ACTIVA</Text>
-                    </View>
-                    <GlobalSessionTimer sessionStartTime={sessionStartTime} />
+            {/* Sesión Activa */}
+            {activeSessionDay !== null && (
+              <TouchableOpacity
+                style={{
+                  marginHorizontal: Spacing.lg,
+                  marginBottom: 16,
+                  borderRadius: 16,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1.5,
+                  borderColor: colors.primary,
+                  padding: 16,
+                  overflow: 'hidden'
+                }}
+                onPress={() => router.push('/(tabs)/workout')}
+                activeOpacity={0.85}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{ backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                    <Text style={{ color: colors.on_primary || '#000', fontSize: 10, fontWeight: '800' }}>SESIÓN ACTIVA</Text>
                   </View>
-                  <View style={styles.sessionBottom}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sessionTitleClient}>Continuar Entrenamiento</Text>
-                      <Text style={styles.sessionSubTitleClient}>Día {activeSessionDay}</Text>
-                    </View>
-                    <View style={styles.sessionPlayBtnWrapper}>
-                      <View style={styles.sessionPlayBtnInner}>
-                        <PlayCircle size={32} color="#000" />
-                      </View>
+                  <GlobalSessionTimer sessionStartTime={sessionStartTime} />
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>Continuar Entrenamiento</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>Día {activeSessionDay}</Text>
+                  </View>
+                  <View style={{ backgroundColor: colors.primary + '20', borderRadius: 24, padding: 4 }}>
+                    <View style={{ backgroundColor: colors.primary, borderRadius: 20, padding: 4 }}>
+                      <PlayCircle size={28} color={colors.on_primary || '#000'} />
                     </View>
                   </View>
                 </View>
-              </View>
-            </TouchableOpacity>
-          ) : lastLog ? (
-            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/history')} activeOpacity={0.9}>
-              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
-                <View style={styles.sessionContent}>
-                  <View style={[styles.sessionBadge, { backgroundColor: Colors.textMuted + '30' }]}>
-                    <Text style={[styles.sessionBadgeText, { color: Colors.textMuted }]}>ÚLTIMA SESIÓN</Text>
-                  </View>
-                  <View style={styles.sessionBottom}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sessionTitleClient}>{lastLogDay?.label || `Día ${lastLog.dayNumber}`}</Text>
-                      <Text style={styles.sessionSubTitleClient}>
-                        {lastLogDay?.muscleGroups?.join(' • ') || 'Entrenamiento completado'}
-                      </Text>
-                    </View>
-                    <View style={[styles.sessionPlayBtnWrapper, { backgroundColor: Colors.surface_lowest }]}>
-                      <View style={[styles.sessionPlayBtnInner, { backgroundColor: Colors.border }]}>
-                        <HistoryIcon size={24} color={Colors.textMuted} style={{ padding: 4 }} />
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.sessionCard} onPress={() => router.push('/(tabs)/workout')} activeOpacity={0.9}>
-              <View style={[styles.sessionBg, { backgroundColor: Colors.surface, borderRadius: 16, borderColor: Colors.surface_lowest, borderWidth: 1 }]}>
-                <View style={styles.sessionContent}>
-                  <View style={styles.sessionBadge}>
-                    <Text style={styles.sessionBadgeText}>SESIÓN DE HOY</Text>
-                  </View>
-                  <View style={styles.sessionBottom}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sessionTitleClient}>Comenzar Entrenamiento</Text>
-                      <Text style={styles.sessionSubTitleClient}>Elige tu rutina de hoy</Text>
-                    </View>
-                    <View style={styles.sessionPlayBtnWrapper}>
-                      <View style={styles.sessionPlayBtnInner}>
-                        <PlayCircle size={32} color="#000" />
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )*/}
+              </TouchableOpacity>
+            )}
 
 
 
@@ -811,6 +924,108 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Option Push Bottom Sheet Modal */}
+      <Modal
+        visible={!!optionsPush}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setOptionsPush(null)}
+      >
+        <View style={styles.optionsPushBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setOptionsPush(null)}
+          />
+          <View style={styles.optionsPushCard}>
+            <View style={styles.optionsPushHandle} />
+
+            {optionsPush?.userHeader ? (
+              <View style={styles.optionsPushUserHeader}>
+                <View style={styles.optionsPushAvatar}>
+                  {currentUser?.profilePhotoUrl ? (
+                    <Image
+                      source={{ uri: currentUser.profilePhotoUrl }}
+                      style={{ width: 48, height: 48, borderRadius: 24 }}
+                    />
+                  ) : (
+                    <UserIcon size={26} color={colors.primary} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionsPushTitle}>{optionsPush.title}</Text>
+                  <Text style={styles.optionsPushMessage} numberOfLines={1}>
+                    {optionsPush.message}
+                  </Text>
+                  <View style={styles.optionsPushBadge}>
+                    <Text style={styles.optionsPushBadgeText}>
+                      {currentUser?.role === 'coach' ? 'Entrenador' : currentUser?.role === 'independiente' ? 'Independiente' : 'Atleta'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.optionsPushHeader}>
+                <View style={[styles.optionsPushIconWrap, optionsPush?.isDestructive && styles.optionsPushIconWrapDestructive]}>
+                  {optionsPush?.isDestructive ? (
+                    <LogOut size={22} color={colors.danger || '#FF4B4B'} />
+                  ) : (
+                    <UserIcon size={22} color={colors.primary} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionsPushTitle}>{optionsPush?.title}</Text>
+                  <Text style={styles.optionsPushMessage}>{optionsPush?.message}</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.optionsPushActions}>
+              {optionsPush?.options.map((opt, i) => {
+                const isDestructive = opt.style === 'destructive';
+                const isCancel = opt.style === 'cancel';
+                const IconComponent = opt.icon;
+
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[
+                      styles.optionsPushBtn,
+                      isDestructive && styles.optionsPushBtnDestructive,
+                      isCancel && styles.optionsPushBtnCancel,
+                      !isDestructive && !isCancel && styles.optionsPushBtnItem,
+                    ]}
+                    onPress={opt.onPress}
+                    activeOpacity={0.7}
+                  >
+                    {IconComponent && (
+                      <IconComponent
+                        size={18}
+                        color={isDestructive ? (colors.danger || '#FF4B4B') : isCancel ? colors.textMuted : colors.primary}
+                        style={{ marginRight: 12 }}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.optionsPushBtnText,
+                        isDestructive && styles.optionsPushBtnTextDestructive,
+                        isCancel && styles.optionsPushBtnTextCancel,
+                        !isDestructive && !isCancel && styles.optionsPushBtnTextItem,
+                      ]}
+                    >
+                      {opt.text}
+                    </Text>
+                    {!isCancel && !isDestructive && (
+                      <ChevronRight size={16} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 
@@ -819,64 +1034,196 @@ export default function HomeScreen() {
 
 
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   clientDashboard: { flex: 1 },
   clientTopHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg },
   coachAvatarSmall: { width: 40, height: 40, borderRadius: 20 },
   clientHeaderTitles: { flex: 1, marginLeft: 12 },
-  clientTopLogo: { fontFamily: Fonts.headline, fontSize: 16, fontWeight: '800', color: Colors.text },
-  clientTopSubtitle: { fontSize: 10, color: Colors.textMuted, letterSpacing: 1 },
+  clientTopLogo: { fontFamily: Fonts.headline, fontSize: 16, fontWeight: '800', color: colors.text },
+  clientTopSubtitle: { fontSize: 10, color: colors.textMuted, letterSpacing: 1 },
   clientGreetingBlock: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-  clientGreetingHi: { fontSize: 24, color: Colors.textMuted },
-  clientGreetingName: { color: Colors.text, fontWeight: '700' },
-  clientGreetingCoach: { fontSize: 14, color: Colors.primary, marginTop: 4 },
+  clientGreetingHi: { fontSize: 24, color: colors.textMuted },
+  clientGreetingName: { color: colors.text, fontWeight: '700' },
+  clientGreetingCoach: { fontSize: 14, color: colors.primary, marginTop: 4 },
   sessionCard: { marginHorizontal: Spacing.lg, marginTop: Spacing.sm },
   sessionBg: { overflow: 'hidden' },
   sessionContent: { padding: Spacing.md },
-  sessionBadge: { backgroundColor: Colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 },
-  sessionBadgeText: { color: '#000', fontSize: 10, fontWeight: '800' },
+  sessionBadge: { backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 12 },
+  sessionBadgeText: { color: colors.on_primary || '#000', fontSize: 10, fontWeight: '800' },
   sessionBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sessionTitleClient: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-  sessionSubTitleClient: { color: Colors.textMuted, fontSize: 13, marginTop: 4 },
-  sessionPlayBtnWrapper: { backgroundColor: Colors.primary + '20', borderRadius: 24, padding: 4 },
-  sessionPlayBtnInner: { backgroundColor: Colors.primary, borderRadius: 20 },
-  coachDividerLine: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.lg, marginHorizontal: Spacing.lg },
+  sessionTitleClient: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  sessionSubTitleClient: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
+  sessionPlayBtnWrapper: { backgroundColor: colors.primary + '20', borderRadius: 24, padding: 4 },
+  sessionPlayBtnInner: { backgroundColor: colors.primary, borderRadius: 20 },
+  coachDividerLine: { height: 1, backgroundColor: colors.border, marginVertical: Spacing.lg, marginHorizontal: Spacing.lg },
   sectionHeaderNew: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-  sectionTitleNew: { color: Colors.text, fontSize: 18, fontWeight: '700', fontFamily: Fonts.headline },
-  stepsCardNew: { marginHorizontal: Spacing.lg, borderRadius: 16, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+  sectionTitleNew: { color: colors.text, fontSize: 18, fontWeight: '700', fontFamily: Fonts.headline },
+  sectionTitleSub: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  stepsCardNew: { marginHorizontal: Spacing.lg, borderRadius: 16, padding: Spacing.md, borderWidth: 1, borderColor: colors.border },
   stepsHeaderNew: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  stepsIconBgNew: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  stepsLabelNew: { color: Colors.textMuted, fontSize: 12, fontWeight: '600' },
-  stepsValueNew: { color: Colors.text, fontSize: 24, fontWeight: '800' },
-  stepsTargetNew: { color: Colors.textMuted, fontSize: 10, fontWeight: '600', marginBottom: 4 },
-  stepsPercentNew: { color: Colors.primary, fontSize: 14, fontWeight: '700' },
-  progressShellNew: { height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: 'hidden' },
-  progressCoreNew: { height: '100%', backgroundColor: Colors.primary, borderRadius: 4 },
+  stepsIconBgNew: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  stepsLabelNew: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  stepsValueNew: { color: colors.text, fontSize: 24, fontWeight: '800' },
+  stepsTargetNew: { color: colors.textMuted, fontSize: 10, fontWeight: '600', marginBottom: 4 },
+  stepsPercentNew: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  progressShellNew: { height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' },
+  progressCoreNew: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
   statsGrid: { flexDirection: 'row', gap: 12, marginHorizontal: Spacing.lg, marginTop: Spacing.lg },
-  statBox: { flex: 1, padding: Spacing.md, borderRadius: 16, borderWidth: 1, borderColor: Colors.border },
-  statBoxLabel: { color: Colors.textMuted, fontSize: 11, fontWeight: '700', marginBottom: 8 },
-  statBoxValue: { fontSize: 28, fontWeight: '800' },
-  clientAccordionCard: { backgroundColor: Colors.surface, borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
+  statBox: { flex: 1, padding: Spacing.md, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
+  statBoxLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '700', marginBottom: 8 },
+  statBoxValue: { color: colors.text, fontSize: 28, fontWeight: '800' },
+  clientAccordionCard: { backgroundColor: colors.surface, borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
   clientAccordionHeader: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md },
-  clientAvatarDark: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.border, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  clientAvatarDark: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   clientAccordionInfo: { flex: 1 },
-  clientAccordionName: { color: Colors.text, fontSize: 16, fontWeight: '700' },
-  clientAccordionMeta: { color: Colors.textMuted, fontSize: 12, marginTop: 4 },
-  evoActionsRow: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.md },
-  evoActionBtn: { backgroundColor: Colors.primary, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginBottom: 8 },
-  evoActionBtnText: { color: '#000', fontSize: 13, fontWeight: '800' },
-  dashboardContainer: { flex: 1, backgroundColor: Colors.background },
+  clientAccordionName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  clientAccordionMeta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
+  evoActionsRow: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: Spacing.md },
+  evoActionBtn: { backgroundColor: colors.primary, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginBottom: 8 },
+  evoActionBtnText: { color: colors.on_primary || '#000', fontSize: 13, fontWeight: '800' },
+  dashboardContainer: { flex: 1, backgroundColor: colors.background },
   topHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
   coachAvatar: { width: 50, height: 50, borderRadius: 25 },
   headerTitles: { flex: 1, marginLeft: 12 },
-  topLogo: { fontFamily: Fonts.headline, fontSize: 20, fontWeight: '800', color: Colors.text },
-  topSubtitle: { fontSize: 11, color: Colors.textMuted, letterSpacing: 1, marginTop: 2 },
+  topLogo: { fontFamily: Fonts.headline, fontSize: 20, fontWeight: '800', color: colors.text },
+  topSubtitle: { fontSize: 11, color: colors.textMuted, letterSpacing: 1, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   iconBtn: { padding: 4 },
   greetingBlock: { paddingHorizontal: Spacing.lg, marginTop: Spacing.xs, marginBottom: Spacing.md },
-  greetingHi: { fontSize: 28, color: Colors.textMuted },
-  greetingName: { color: Colors.text, fontWeight: '700' },
-  bgSelector: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 8 },
-  bgSelectorText: { color: Colors.primary, fontSize: 12, fontWeight: '600' },
+  greetingHi: { fontSize: 28, color: colors.textMuted },
+  greetingName: { color: colors.text, fontWeight: '700' },
+  bgSelector: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 8 },
+  bgSelectorText: { color: colors.primary, fontSize: 12, fontWeight: '600' },
+  // Adding content container style
+  container: { flex: 1 },
+  content: { flexGrow: 1 },
+  coachDashboard: { flex: 1 },
   clientsSection: { marginHorizontal: Spacing.lg, flex: 1 },
+  optionsPushBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  optionsPushCard: {
+    backgroundColor: colors.surface || '#1C1C1E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    borderWidth: 1,
+    borderColor: colors.border || 'rgba(255, 255, 255, 0.12)',
+  },
+  optionsPushHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border || 'rgba(255, 255, 255, 0.25)',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  optionsPushUserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border || 'rgba(255, 255, 255, 0.08)',
+  },
+  optionsPushAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: (colors.primary || '#CCFF00') + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.primary || '#CCFF00',
+  },
+  optionsPushHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 18,
+  },
+  optionsPushIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: (colors.primary || '#CCFF00') + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionsPushIconWrapDestructive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  optionsPushTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.text || '#FFFFFF',
+    marginBottom: 2,
+  },
+  optionsPushMessage: {
+    fontSize: 13,
+    color: colors.textMuted || '#94A3B8',
+    lineHeight: 18,
+  },
+  optionsPushBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: (colors.primary || '#CCFF00') + '18',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  optionsPushBadgeText: {
+    color: colors.primary || '#CCFF00',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  optionsPushActions: {
+    gap: 8,
+  },
+  optionsPushBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+  },
+  optionsPushBtnItem: {
+    backgroundColor: colors.cardBg || (colors.mode === 'dark' ? '#27272A' : '#F1F5F9'),
+    borderWidth: 1,
+    borderColor: colors.border || 'transparent',
+  },
+  optionsPushBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  optionsPushBtnTextItem: {
+    color: colors.text || '#FFFFFF',
+  },
+  optionsPushBtnDestructive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  optionsPushBtnTextDestructive: {
+    color: colors.danger || '#EF4444',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  optionsPushBtnCancel: {
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  optionsPushBtnTextCancel: {
+    color: colors.textMuted || '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 });

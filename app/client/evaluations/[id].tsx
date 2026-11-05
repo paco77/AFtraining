@@ -1,17 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, StatusBar, Modal } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Calendar, ChevronDown, ChevronUp, Scale, Camera } from 'lucide-react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useTheme } from '@/context/ThemeContext';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, StatusBar, Modal, Alert } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { ArrowLeft, Calendar, ChevronDown, ChevronUp, Scale, Camera, Edit3 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '@/constants/theme';
 import api from '@/services/api';
+import { formatDisplayDate, getSafeTimestamp } from '@/services/dateUtils';
 import { useUser } from '@/context/UserContext';
 
 export default function ClientEvaluations() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { clients } = useUser();
+    const { clients, currentUser } = useUser();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [mode, colors]);
     const client = clients.find(c => String(c.id) === String(id));
 
     const [evaluations, setEvaluations] = useState<any[]>([]);
@@ -26,11 +30,37 @@ export default function ClientEvaluations() {
     const [compareTarget, setCompareTarget] = useState<any>(null);
     const [isSelectingTarget, setIsSelectingTarget] = useState(false);
 
-    useEffect(() => {
-        if (id) {
-            loadEvaluations();
+    const canEdit = currentUser?.role !== 'client' && (currentUser?.role === 'coach' || currentUser?.role === 'independiente');
+
+    useFocusEffect(
+        useCallback(() => {
+            if (id) {
+                loadEvaluations();
+            }
+        }, [id])
+    );
+
+    const handleEditEvaluation = (ev: any) => {
+        if (ev.id === 'initial_bio') {
+            Alert.alert(
+                'Datos Iniciales del Cliente',
+                'Esta evaluación corresponde a los datos iniciales registrados en el perfil del cliente. ¿Deseas editarlos desde su perfil?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Editar Perfil',
+                        onPress: () => router.push({ pathname: '/client/edit/[id]', params: { id: String(id) } })
+                    }
+                ]
+            );
+            return;
         }
-    }, [id]);
+
+        router.push({
+            pathname: '/client/progress/edit',
+            params: { item: JSON.stringify(ev), clientId: String(id) }
+        });
+    };
 
     const loadEvaluations = async () => {
         setLoading(true);
@@ -49,21 +79,21 @@ export default function ClientEvaluations() {
             };
 
             if (client) {
+                const initialDate = client?.created_at || (client as any)?.created_at;
                 evals.unshift({
                     id: 'initial_bio',
-                    weight: client.starting_weight,
+                    weight: (client as any).starting_weight || client.weight,
                     measurements: typeof client.initial_measurements === 'string' 
                         ? JSON.parse(client.initial_measurements) 
                         : (client.initial_measurements || {}),
-                    created_at: client.created_at || new Date().toISOString(),
+                    recorded_at: initialDate,
+                    created_at: initialDate,
                     comments: 'Datos iniciales del cliente al registrarse en el sistema.',
                     front_photo_url: formatUrl(client.front_photo_url),
                     side_photo_url: formatUrl(client.side_photo_url),
                     back_photo_url: formatUrl(client.back_photo_url)
                 });
             }
-
-            const safeDateStr = (d: any) => typeof d === 'string' ? d.replace(' ', 'T') : d;
 
             evals = evals.map((ev: any) => ({
                 ...ev,
@@ -73,10 +103,8 @@ export default function ClientEvaluations() {
             }));
 
             evals.sort((a: any, b: any) => {
-                const dateA = new Date(safeDateStr(a.created_at || a.recorded_at) || 0).getTime();
-                const dateB = new Date(safeDateStr(b.created_at || b.recorded_at) || 0).getTime();
-                if (isNaN(dateA)) return 1;
-                if (isNaN(dateB)) return -1;
+                const dateA = getSafeTimestamp(a.recorded_at || a.created_at);
+                const dateB = getSafeTimestamp(b.recorded_at || b.created_at);
                 return dateB - dateA;
             });
             setEvaluations(evals);
@@ -96,11 +124,8 @@ export default function ClientEvaluations() {
         setIsSelectingTarget(true);
     };
 
-    const formatDate = (dateStr: string) => {
-        const safe = typeof dateStr === 'string' ? dateStr.replace(' ', 'T') : null;
-        if (!safe) return new Date().toLocaleDateString();
-        const d = new Date(safe);
-        return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
+    const formatDate = (dateStr: string, isInitial = false) => {
+        return formatDisplayDate(dateStr, isInitial ? 'Registro Inicial' : 'Sin fecha');
     };
 
     return (
@@ -113,6 +138,14 @@ export default function ClientEvaluations() {
                     <ArrowLeft size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Todas las Evaluaciones</Text>
+                {(currentUser?.role === 'coach' || currentUser?.role === 'independiente' || String(currentUser?.id) === String(id)) && (
+                    <TouchableOpacity 
+                        style={{ marginLeft: 'auto', backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}
+                        onPress={() => router.push({ pathname: '/client/progress/[id]', params: { id: String(id) } })}
+                    >
+                        <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>+ Registrar</Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -126,7 +159,7 @@ export default function ClientEvaluations() {
                 ) : (
                     evaluations.map((ev, index) => {
                         const isExpanded = expandedId === ev.id;
-                        const date = formatDate(ev.created_at || ev.recorded_at);
+                        const date = formatDate(ev.recorded_at || ev.created_at, ev.id === 'initial_bio');
                         const hasPhotos = ev.front_photo_url || ev.side_photo_url || ev.back_photo_url;
                         
                         return (
@@ -147,8 +180,21 @@ export default function ClientEvaluations() {
                                     </View>
                                     
                                     <View style={styles.cardHeaderRight}>
-                                        {hasPhotos && <Camera size={16} color={Colors.textMuted} style={{ marginRight: 8 }} />}
-                                        {isExpanded ? <ChevronUp size={20} color={Colors.textMuted} /> : <ChevronDown size={20} color={Colors.textMuted} />}
+                                        {hasPhotos && <Camera size={16} color={colors.textMuted} style={{ marginRight: 8 }} />}
+                                        {canEdit && (
+                                            <TouchableOpacity 
+                                                style={styles.cardHeaderEditBtn}
+                                                onPress={(e) => {
+                                                    e.stopPropagation?.();
+                                                    handleEditEvaluation(ev);
+                                                }}
+                                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                                activeOpacity={0.7}
+                                            >
+                                                <Edit3 size={15} color={colors.primary} />
+                                            </TouchableOpacity>
+                                        )}
+                                        {isExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
                                     </View>
                                 </TouchableOpacity>
 
@@ -213,6 +259,32 @@ export default function ClientEvaluations() {
                                                 </TouchableOpacity>
                                             </View>
                                         )}
+
+                                        {/* Action Buttons */}
+                                        <View style={styles.cardActionsRow}>
+                                            {canEdit && (
+                                                <TouchableOpacity 
+                                                    style={styles.cardActionEditBtn}
+                                                    onPress={() => handleEditEvaluation(ev)}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Edit3 size={15} color="#000" />
+                                                    <Text style={styles.cardActionEditText}>Editar Evaluación</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                            {ev.id !== 'initial_bio' && (
+                                                <TouchableOpacity 
+                                                    style={styles.cardActionDetailBtn}
+                                                    onPress={() => router.push({
+                                                        pathname: '/client/progress/detail',
+                                                        params: { item: JSON.stringify(ev), clientId: String(id) }
+                                                    })}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Text style={styles.cardActionDetailText}>Ver Detalle</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
                                     </View>
                                 )}
                             </View>
@@ -267,7 +339,7 @@ export default function ClientEvaluations() {
                                     }}
                                 >
                                     <Calendar size={18} color={Colors.textMuted} />
-                                    <Text style={styles.selectEvalText}>{formatDate(e.created_at || e.recorded_at)}</Text>
+                                    <Text style={styles.selectEvalText}>{formatDate(e.recorded_at || e.created_at, e.id === 'initial_bio')}</Text>
                                     <View style={{ flex: 1 }} />
                                     {e.weight && <Text style={styles.selectEvalSubtext}>{e.weight} kg</Text>}
                                 </TouchableOpacity>
@@ -296,10 +368,10 @@ export default function ClientEvaluations() {
 
                     <View style={styles.compareLabelsRow}>
                         <View style={styles.compareLabelCol}>
-                            <Text style={styles.compareDateText}>{compareBase ? formatDate(compareBase.created_at || compareBase.recorded_at) : ''}</Text>
+                            <Text style={styles.compareDateText}>{compareBase ? formatDate(compareBase.recorded_at || compareBase.created_at, compareBase.id === 'initial_bio') : ''}</Text>
                         </View>
                         <View style={styles.compareLabelCol}>
-                            <Text style={styles.compareDateText}>{compareTarget ? formatDate(compareTarget.created_at || compareTarget.recorded_at) : ''}</Text>
+                            <Text style={styles.compareDateText}>{compareTarget ? formatDate(compareTarget.recorded_at || compareTarget.created_at, compareTarget.id === 'initial_bio') : ''}</Text>
                         </View>
                     </View>
 
@@ -375,13 +447,13 @@ export default function ClientEvaluations() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         paddingTop: 60,
         paddingBottom: 20,
         paddingHorizontal: Spacing.lg,
@@ -396,7 +468,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     content: {
         flex: 1,
@@ -409,22 +481,22 @@ const styles = StyleSheet.create({
         padding: 40,
     },
     emptyText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         textAlign: 'center',
         marginTop: 16,
         fontSize: 16,
         fontWeight: '500',
     },
     card: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         overflow: 'hidden',
     },
     cardExpanded: {
-        borderColor: Colors.primary + '50',
+        borderColor: colors.primary + '50',
     },
     cardHeader: {
         flexDirection: 'row',
@@ -439,11 +511,56 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
     },
+    cardHeaderEditBtn: {
+        padding: 6,
+        borderRadius: 8,
+        backgroundColor: mode === 'dark' ? 'rgba(34,197,94,0.12)' : 'rgba(34,197,94,0.1)',
+        marginRight: 8,
+    },
+    cardActionsRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginTop: 16,
+        paddingTop: 14,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+    },
+    cardActionEditBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.primary,
+        paddingVertical: 10,
+        borderRadius: 12,
+        gap: 6,
+    },
+    cardActionEditText: {
+        color: '#000',
+        fontWeight: '800',
+        fontSize: 13,
+    },
+    cardActionDetailBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: mode === 'dark' ? '#27272a' : '#f1f5f9',
+        paddingVertical: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    cardActionDetailText: {
+        color: colors.text,
+        fontWeight: '700',
+        fontSize: 13,
+    },
     dateBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: 'rgba(204, 255, 0, 0.1)',
+        backgroundColor: mode === 'dark' ? 'rgba(93, 166, 255, 0.15)' : 'rgba(29, 78, 216, 0.1)',
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 8,
@@ -451,14 +568,14 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     dateText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '700',
         fontSize: 14,
     },
     weightSummary: {
         fontSize: 18,
         fontWeight: '900',
-        color: Colors.text,
+        color: colors.text,
     },
     cardBody: {
         padding: 16,
@@ -466,13 +583,13 @@ const styles = StyleSheet.create({
     },
     divider: {
         height: 1,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
         marginBottom: 16,
     },
     sectionSubtitle: {
         fontSize: 14,
         fontWeight: '700',
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 10,
     },
     measurementsSection: {
@@ -484,9 +601,9 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     measurementItem: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : colors.surface_lowest,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 8,
@@ -496,27 +613,27 @@ const styles = StyleSheet.create({
     },
     measurementKey: {
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
         textTransform: 'capitalize',
     },
     measurementValue: {
         fontSize: 14,
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '800',
     },
     commentsSection: {
         marginBottom: 20,
     },
     commentBox: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : colors.surface_lowest,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         padding: 16,
         borderRadius: 12,
     },
     commentText: {
-        color: Colors.text,
+        color: colors.text,
         fontSize: 14,
         fontStyle: 'italic',
         lineHeight: 20,
@@ -534,7 +651,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         position: 'relative',
     },
     photoImage: {
@@ -596,12 +713,12 @@ const styles = StyleSheet.create({
     compareBtn: {
         marginTop: 16,
         padding: 12,
-        backgroundColor: Colors.primary + '15',
+        backgroundColor: colors.primary + '15',
         borderRadius: 8,
         alignItems: 'center',
     },
     compareBtnText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: 'bold',
         fontSize: 14,
     },
@@ -611,7 +728,7 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     selectModalContent: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         padding: Spacing.md,
@@ -626,45 +743,47 @@ const styles = StyleSheet.create({
     selectModalTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: Colors.text,
+        color: colors.text,
     },
     selectModalClose: {
         padding: 8,
     },
     selectModalCloseText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '600',
     },
     selectEvalItem: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 16,
-        backgroundColor: Colors.background,
+        backgroundColor: mode === 'dark' ? colors.background : colors.surface_lowest,
         borderRadius: 12,
         marginBottom: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     selectEvalText: {
         marginLeft: 12,
         fontSize: 16,
-        color: Colors.text,
+        color: colors.text,
         fontWeight: '500',
     },
     selectEvalSubtext: {
         fontSize: 14,
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     compareViewerContainer: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     compareViewerHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: Spacing.md,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     compareViewerCloseBtn: {
         padding: 8,
@@ -672,14 +791,14 @@ const styles = StyleSheet.create({
     compareViewerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: Colors.text,
+        color: colors.text,
     },
     compareLabelsRow: {
         flexDirection: 'row',
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     compareLabelCol: {
         flex: 1,
@@ -688,12 +807,12 @@ const styles = StyleSheet.create({
     compareDateText: {
         fontSize: 14,
         fontWeight: 'bold',
-        color: Colors.text,
+        color: colors.text,
     },
     compareCategoryTitle: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: Colors.primary,
+        color: colors.primary,
         textAlign: 'center',
         marginTop: 20,
         marginBottom: 8,
@@ -706,9 +825,11 @@ const styles = StyleSheet.create({
         flex: 1,
         height: 250,
         marginHorizontal: 4,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 12,
         overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     compareImage: {
         width: '100%',
@@ -718,10 +839,10 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
     },
     noPhotoText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 14,
     }
 });

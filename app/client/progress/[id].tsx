@@ -1,11 +1,4 @@
-import { Colors, Spacing } from '@/constants/theme';
-import { showToast } from '@/services/toast';
-import api from '@/services/api';
-import * as ImagePicker from 'expo-image-picker';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Camera, Check, FileText, Plus, Scale, Trash, Activity } from 'lucide-react-native';
-import React, { useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useMemo } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -19,24 +12,84 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import {
+    ArrowLeft,
+    Calendar,
+    Camera,
+    Check,
+    FileText,
+    Plus,
+    Scale,
+    Trash,
+    Activity,
+} from 'lucide-react-native';
+
+import { useTheme } from '@/context/ThemeContext';
+import { Colors, Spacing } from '@/constants/theme';
+import api from '@/services/api';
+import { showToast } from '@/services/toast';
+import { getLocalDateString } from '@/services/dateUtils';
+
+const PRESET_METRICS = [
+    { label: '% Grasa', name: '% Grasa' },
+    { label: 'Masa Muscular', name: 'Masa Muscular' },
+    { label: 'Cintura', name: 'Cintura (cm)' },
+    { label: 'Cadera', name: 'Cadera (cm)' },
+    { label: 'Pecho', name: 'Pecho (cm)' },
+    { label: 'Brazo Der.', name: 'Brazo Der. (cm)' },
+    { label: 'Brazo Izq.', name: 'Brazo Izq. (cm)' },
+    { label: 'Muslo Der.', name: 'Muslo Der. (cm)' },
+    { label: 'Muslo Izq.', name: 'Muslo Izq. (cm)' },
+    { label: 'Pantorrilla', name: 'Pantorrilla (cm)' },
+    { label: 'Espalda', name: 'Espalda (cm)' },
+    { label: 'Cuello', name: 'Cuello (cm)' },
+];
 
 export default function ClientProgressScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [mode, colors]);
 
+    const [recordedAt, setRecordedAt] = useState(() => getLocalDateString());
     const [weight, setWeight] = useState('');
     const [comments, setComments] = useState('');
-    const [dynamicMeasurements, setDynamicMeasurements] = useState([{ name: '% Grasa', value: '' }]);
-    const [photos, setPhotos] = useState({
-        front: null as string | null,
-        side: null as string | null,
-        back: null as string | null,
+    const [dynamicMeasurements, setDynamicMeasurements] = useState<{ name: string; value: string }[]>([
+        { name: '% Grasa', value: '' }
+    ]);
+    const [photos, setPhotos] = useState<{
+        front: string | null;
+        side: string | null;
+        back: string | null;
+    }>({
+        front: null,
+        side: null,
+        back: null,
     });
     const [isLoading, setIsLoading] = useState(false);
-    const insets = useSafeAreaInsets();
 
     const handleAddMeasurement = () => {
         setDynamicMeasurements(prev => [...prev, { name: '', value: '' }]);
+    };
+
+    const handleAddPresetMetric = (metricName: string) => {
+        const existingIdx = dynamicMeasurements.findIndex(
+            m => m.name.trim().toLowerCase() === metricName.trim().toLowerCase()
+        );
+        if (existingIdx >= 0) {
+            showToast.info(`"${metricName}" ya está en la lista`);
+            return;
+        }
+
+        if (dynamicMeasurements.length === 1 && !dynamicMeasurements[0].name && !dynamicMeasurements[0].value) {
+            setDynamicMeasurements([{ name: metricName, value: '' }]);
+        } else {
+            setDynamicMeasurements(prev => [...prev, { name: metricName, value: '' }]);
+        }
     };
 
     const handleRemoveMeasurement = (index: number) => {
@@ -51,22 +104,23 @@ export default function ClientProgressScreen() {
         });
     };
 
-    const handlePickPhoto = async (key: keyof typeof photos) => {
+    const handlePickPhoto = async (key: 'front' | 'side' | 'back') => {
         Alert.alert(
             'Foto de progreso',
-            '¿Qué deseas hacer?',
+            'Selecciona una opción:',
             [
                 {
-                    text: 'Tomar foto',
+                    text: 'Tomar foto con cámara',
                     onPress: async () => {
                         const { status } = await ImagePicker.requestCameraPermissionsAsync();
                         if (status !== 'granted') {
-                            Alert.alert('Error', 'Se requiere permiso para usar la cámara');
+                            Alert.alert('Permiso requerido', 'Se requiere acceso a la cámara para tomar fotos.');
                             return;
                         }
                         const result = await ImagePicker.launchCameraAsync({
                             mediaTypes: ['images'],
-                            quality: 0.7,
+                            quality: 0.8,
+                            allowsEditing: true,
                         });
                         if (!result.canceled && result.assets[0].uri) {
                             setPhotos(prev => ({ ...prev, [key]: result.assets[0].uri }));
@@ -74,16 +128,17 @@ export default function ClientProgressScreen() {
                     }
                 },
                 {
-                    text: 'Elegir de la galería',
+                    text: 'Elegir de galería',
                     onPress: async () => {
                         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
                         if (status !== 'granted') {
-                            Alert.alert('Error', 'Se requiere permiso para acceder a las fotos');
+                            Alert.alert('Permiso requerido', 'Se requiere permiso para acceder a tus fotos.');
                             return;
                         }
                         const result = await ImagePicker.launchImageLibraryAsync({
                             mediaTypes: ['images'],
-                            quality: 0.7,
+                            quality: 0.8,
+                            allowsEditing: true,
                         });
                         if (!result.canceled && result.assets[0].uri) {
                             setPhotos(prev => ({ ...prev, [key]: result.assets[0].uri }));
@@ -95,9 +150,16 @@ export default function ClientProgressScreen() {
         );
     };
 
+    const handleRemovePhoto = (key: 'front' | 'side' | 'back') => {
+        setPhotos(prev => ({ ...prev, [key]: null }));
+    };
+
     const handleSave = async () => {
-        if (!weight && !comments && !photos.front && !photos.back) {
-            Alert.alert('Error', 'Por favor ingresa al menos un dato para guardar el progreso.');
+        const hasPhoto = photos.front || photos.side || photos.back;
+        const hasAnyMeasurement = dynamicMeasurements.some(m => m.name.trim() && m.value.trim());
+
+        if (!weight && !comments && !hasPhoto && !hasAnyMeasurement) {
+            Alert.alert('Campos incompletos', 'Por favor ingresa al menos un dato (peso, medidas, foto o comentarios) para registrar.');
             return;
         }
 
@@ -105,7 +167,7 @@ export default function ClientProgressScreen() {
         try {
             const formData = new FormData();
             formData.append('client_id', String(id));
-            formData.append('recorded_at', new Date().toISOString().split('T')[0]);
+            formData.append('recorded_at', recordedAt.trim() || getLocalDateString());
             if (weight) formData.append('weight', weight);
             if (comments) formData.append('comments', comments);
 
@@ -119,12 +181,12 @@ export default function ClientProgressScreen() {
                 formData.append('measurements', JSON.stringify(measurementsObj));
             }
 
-            ['front', 'side', 'back'].forEach(sideStr => {
-                const uri = (photos as any)[sideStr];
+            (['front', 'side', 'back'] as const).forEach(sideStr => {
+                const uri = photos[sideStr];
                 if (uri) {
-                    const filename = uri.split('/').pop() || 'photo.jpg';
+                    const filename = uri.split('/').pop() || `${sideStr}_photo.jpg`;
                     const match = /\.(\w+)$/.exec(filename);
-                    const type = match ? `image/${match[1]}` : `image`;
+                    const type = match ? `image/${match[1]}` : `image/jpeg`;
                     // @ts-ignore
                     formData.append(`${sideStr}_photo`, {
                         uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
@@ -148,100 +210,198 @@ export default function ClientProgressScreen() {
         }
     };
 
-    const renderPhotoSelector = (label: string, key: keyof typeof photos) => (
-        <View style={styles.photoBox}>
-            <Text style={styles.photoLabel}>{label}</Text>
-            <TouchableOpacity
-                style={[styles.photoBtn, photos[key] && styles.photoBtnFilled]}
-                onPress={() => handlePickPhoto(key)}
-            >
-                {photos[key] ? (
-                    <Image source={{ uri: photos[key]! }} style={styles.previewImage} />
-                ) : (
-                    <View style={styles.photoPlaceholder}>
-                        <Camera size={24} color={Colors.textMuted} />
-                        <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
+    const renderPhotoSelector = (label: string, key: 'front' | 'side' | 'back') => {
+        const currentUri = photos[key];
+
+        return (
+            <View style={styles.photoBox}>
+                <Text style={styles.photoLabel}>{label}</Text>
+
+                {currentUri ? (
+                    <View style={styles.photoContainer}>
+                        <Image source={{ uri: currentUri }} style={styles.previewImage} resizeMode="cover" />
+
+                        {/* Action buttons */}
+                        <View style={styles.photoActions}>
+                            <TouchableOpacity
+                                style={styles.photoActionBtn}
+                                onPress={() => handlePickPhoto(key)}
+                                activeOpacity={0.8}
+                            >
+                                <Camera size={14} color="#fff" />
+                                <Text style={styles.photoActionBtnText}>Cambiar</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.photoActionBtn, styles.photoActionBtnDanger]}
+                                onPress={() => handleRemovePhoto(key)}
+                                activeOpacity={0.8}
+                            >
+                                <Trash size={14} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
+                ) : (
+                    <TouchableOpacity
+                        style={styles.photoBtn}
+                        onPress={() => handlePickPhoto(key)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.photoPlaceholder}>
+                            <View style={styles.photoIconCircle}>
+                                <Camera size={22} color={colors.primary} />
+                            </View>
+                            <Text style={styles.photoPlaceholderText}>+ Añadir</Text>
+                        </View>
+                    </TouchableOpacity>
                 )}
-            </TouchableOpacity>
-        </View>
-    );
+            </View>
+        );
+    };
 
     return (
         <KeyboardAvoidingView
             style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <Stack.Screen options={{ headerShown: false }} />
-            
-            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
+
+            {/* Header */}
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color={Colors.text} />
+                    <ArrowLeft size={22} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Registrar Progreso</Text>
-                <View style={{ width: 24 }} />
+                <View style={styles.headerTitleContainer}>
+                    <Text style={styles.headerTitle}>Registrar Evaluación</Text>
+                    <Text style={styles.headerSubtitle}>Medidas, fotos y seguimiento</Text>
+                </View>
+                <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-                
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Scale size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Peso Actual</Text>
+            <ScrollView
+                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(insets.bottom, 24) + 40 }]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
+                {/* Fecha y Peso */}
+                <View style={styles.sectionRow}>
+                    <View style={[styles.section, { flex: 1, marginBottom: 0 }]}>
+                        <View style={styles.sectionHeader}>
+                            <Calendar size={18} color={colors.primary} />
+                            <Text style={styles.sectionTitle}>Fecha</Text>
+                        </View>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="YYYY-MM-DD"
+                            placeholderTextColor={colors.textMuted}
+                            value={recordedAt}
+                            onChangeText={setRecordedAt}
+                        />
                     </View>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Peso (kg)"
-                        keyboardType="decimal-pad"
-                        placeholderTextColor={Colors.textMuted}
-                        value={weight}
-                        onChangeText={setWeight}
-                    />
+
+                    <View style={[styles.section, { flex: 1, marginBottom: 0 }]}>
+                        <View style={styles.sectionHeader}>
+                            <Scale size={18} color={colors.primary} />
+                            <Text style={styles.sectionTitle}>Peso (kg)</Text>
+                        </View>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Ej. 75.5"
+                            keyboardType="decimal-pad"
+                            placeholderTextColor={colors.textMuted}
+                            value={weight}
+                            onChangeText={setWeight}
+                        />
+                    </View>
                 </View>
 
+                {/* Métricas y Biometría */}
                 <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Activity size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Biometría Avanzada</Text>
-                    </View>
-                    
-                    {dynamicMeasurements.map((meas, idx) => (
-                        <View key={idx} style={styles.measurementRow}>
-                            <TextInput
-                                style={[styles.input, styles.measurementNameInput]}
-                                placeholder="Nombre (ej. Pecho)"
-                                placeholderTextColor={Colors.textMuted}
-                                value={meas.name}
-                                onChangeText={(val) => updateMeasurement(idx, 'name', val)}
-                            />
-                            <TextInput
-                                style={[styles.input, styles.measurementValueInput]}
-                                placeholder="Valor"
-                                keyboardType="decimal-pad"
-                                placeholderTextColor={Colors.textMuted}
-                                value={meas.value}
-                                onChangeText={(val) => updateMeasurement(idx, 'value', val)}
-                            />
-                            <TouchableOpacity 
-                                style={styles.removeMeasBtn} 
-                                onPress={() => handleRemoveMeasurement(idx)}
-                            >
-                                <Trash size={20} color={Colors.error || '#ef4444'} />
-                            </TouchableOpacity>
+                    <View style={styles.sectionHeaderBetween}>
+                        <View style={styles.sectionHeader}>
+                            <Activity size={18} color={colors.primary} />
+                            <Text style={styles.sectionTitle}>Medidas y Biometría</Text>
                         </View>
-                    ))}
-                    
-                    <TouchableOpacity style={styles.addMeasBtn} onPress={handleAddMeasurement}>
-                        <Plus size={16} color={Colors.primary} />
-                        <Text style={styles.addMeasBtnText}>Añadir medida</Text>
+                        <View style={styles.badgeCount}>
+                            <Text style={styles.badgeCountText}>{dynamicMeasurements.length}</Text>
+                        </View>
+                    </View>
+
+                    {/* Quick Metric Presets */}
+                    <Text style={styles.presetSubtitle}>Sugerencias rápidas para añadir:</Text>
+                    <View style={styles.chipsContainer}>
+                        {PRESET_METRICS.map(preset => {
+                            const isAdded = dynamicMeasurements.some(
+                                m => m.name.trim().toLowerCase() === preset.name.trim().toLowerCase()
+                            );
+                            return (
+                                <TouchableOpacity
+                                    key={preset.name}
+                                    style={[styles.chip, isAdded && styles.chipActive]}
+                                    onPress={() => handleAddPresetMetric(preset.name)}
+                                    activeOpacity={0.7}
+                                >
+                                    {isAdded ? (
+                                        <Check size={12} color="#000" style={{ marginRight: 4 }} />
+                                    ) : (
+                                        <Plus size={12} color={colors.primary} style={{ marginRight: 4 }} />
+                                    )}
+                                    <Text style={[styles.chipText, isAdded && styles.chipTextActive]}>
+                                        {preset.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+
+                    {/* Metric Rows */}
+                    <View style={styles.metricsList}>
+                        {dynamicMeasurements.map((meas, idx) => (
+                            <View key={idx} style={styles.measurementRow}>
+                                <TextInput
+                                    style={[styles.input, styles.measurementNameInput]}
+                                    placeholder="Nombre de medida (ej. Cintura)"
+                                    placeholderTextColor={colors.textMuted}
+                                    value={meas.name}
+                                    onChangeText={(val) => updateMeasurement(idx, 'name', val)}
+                                />
+                                <TextInput
+                                    style={[styles.input, styles.measurementValueInput]}
+                                    placeholder="Valor (ej. 82)"
+                                    placeholderTextColor={colors.textMuted}
+                                    value={meas.value}
+                                    onChangeText={(val) => updateMeasurement(idx, 'value', val)}
+                                />
+                                <TouchableOpacity
+                                    style={styles.removeMeasBtn}
+                                    onPress={() => handleRemoveMeasurement(idx)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Trash size={18} color="#ef4444" />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </View>
+
+                    <TouchableOpacity
+                        style={styles.addMeasBtn}
+                        onPress={handleAddMeasurement}
+                        activeOpacity={0.7}
+                    >
+                        <Plus size={16} color={colors.primary} />
+                        <Text style={styles.addMeasBtnText}>Añadir otra medida personalizada</Text>
                     </TouchableOpacity>
                 </View>
 
+                {/* Fotos de Progreso */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Camera size={18} color={Colors.primary} />
+                        <Camera size={18} color={colors.primary} />
                         <Text style={styles.sectionTitle}>Fotos de Progreso</Text>
                     </View>
+                    <Text style={styles.photosSubtitle}>
+                        Toma o adjunta fotografías de frente, perfil y espalda.
+                    </Text>
                     <View style={styles.photoGrid}>
                         {renderPhotoSelector('Frente', 'front')}
                         {renderPhotoSelector('Perfil', 'side')}
@@ -249,15 +409,16 @@ export default function ClientProgressScreen() {
                     </View>
                 </View>
 
+                {/* Comentarios */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <FileText size={18} color={Colors.primary} />
-                        <Text style={styles.sectionTitle}>Comentarios</Text>
+                        <FileText size={18} color={colors.primary} />
+                        <Text style={styles.sectionTitle}>Comentarios y Observaciones</Text>
                     </View>
                     <TextInput
                         style={[styles.input, styles.textArea]}
-                        placeholder="Observaciones de este periodo..."
-                        placeholderTextColor={Colors.textMuted}
+                        placeholder="Escribe notas sobre avances, sensaciones o recomendaciones..."
+                        placeholderTextColor={colors.textMuted}
                         multiline
                         numberOfLines={4}
                         value={comments}
@@ -265,6 +426,7 @@ export default function ClientProgressScreen() {
                     />
                 </View>
 
+                {/* Botón Guardar */}
                 <TouchableOpacity
                     style={[styles.submitBtn, isLoading && { opacity: 0.7 }]}
                     activeOpacity={0.8}
@@ -275,163 +437,168 @@ export default function ClientProgressScreen() {
                         <ActivityIndicator color="#000" />
                     ) : (
                         <>
-                            <Check size={20} color="#000" />
-                            <Text style={styles.submitBtnText}>Guardar Progreso</Text>
+                            <Check size={20} color="#000" strokeWidth={2.5} />
+                            <Text style={styles.submitBtnText}>Guardar Evaluación</Text>
                         </>
                     )}
                 </TouchableOpacity>
-
-                <View style={{ height: 40 }} />
             </ScrollView>
         </KeyboardAvoidingView>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: Spacing.md,
-        paddingTop: Platform.OS === 'ios' ? 60 : 20,
-        paddingBottom: 20,
-        backgroundColor: Colors.surface,
+        paddingBottom: 16,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backBtn: {
-        padding: 8,
-        backgroundColor: Colors.surfaceLight,
+        width: 40,
+        height: 40,
         borderRadius: 12,
+        backgroundColor: mode === 'dark' ? '#222' : '#f1f5f9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    headerTitleContainer: {
+        alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 17,
         fontWeight: '800',
-        color: Colors.text,
-        letterSpacing: -0.5,
+        color: colors.text,
+        letterSpacing: -0.3,
+    },
+    headerSubtitle: {
+        fontSize: 12,
+        color: colors.textMuted,
+        marginTop: 2,
     },
     scroll: {
         padding: Spacing.md,
+        gap: 16,
+    },
+    sectionRow: {
+        flexDirection: 'row',
+        gap: 12,
     },
     section: {
-        marginBottom: 24,
-        backgroundColor: Colors.surface,
-        padding: 20,
-        borderRadius: 24,
+        backgroundColor: colors.surface,
+        padding: 16,
+        borderRadius: 20,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-        marginBottom: 16,
+        gap: 8,
+        marginBottom: 12,
     },
-    sectionTitle: {
-        fontSize: 15,
-        fontWeight: '800',
-        color: Colors.primary,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    input: {
-        backgroundColor: Colors.surfaceLight,
-        borderRadius: 16,
-        color: Colors.text,
-        fontSize: 15,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderWidth: 1,
-        borderColor: 'transparent',
-    },
-    textArea: {
-        minHeight: 100,
-        textAlignVertical: 'top',
-        paddingTop: 14,
-    },
-    photoGrid: {
+    sectionHeaderBetween: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        gap: 16,
-    },
-    photoBox: {
-        flex: 1,
         alignItems: 'center',
-    },
-    photoLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: Colors.textMuted,
+        justifyContent: 'space-between',
         marginBottom: 8,
     },
-    photoBtn: {
-        width: '100%',
-        aspectRatio: 3/4,
-        backgroundColor: Colors.surfaceLight,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        borderStyle: 'dashed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
+    badgeCount: {
+        backgroundColor: mode === 'dark' ? 'rgba(34,197,94,0.15)' : '#dcfce7',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
     },
-    photoBtnFilled: {
-        borderStyle: 'solid',
-        borderColor: Colors.primary,
-    },
-    photoPlaceholder: {
-        alignItems: 'center',
-        gap: 6,
-    },
-    photoPlaceholderText: {
+    badgeCountText: {
         fontSize: 12,
-        fontWeight: '500',
-        color: Colors.textMuted,
+        fontWeight: '700',
+        color: colors.primary,
     },
-    previewImage: {
-        width: '100%',
-        height: '100%',
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: colors.primary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
     },
-    submitBtn: {
+    presetSubtitle: {
+        fontSize: 12,
+        color: colors.textMuted,
+        marginBottom: 10,
+    },
+    chipsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 16,
+    },
+    chip: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: Colors.primary,
-        paddingVertical: 18,
-        borderRadius: 20,
-        gap: 10,
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+        backgroundColor: mode === 'dark' ? '#242424' : '#f1f5f9',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
-    submitBtnText: {
-        fontWeight: '800',
-        fontSize: 17,
+    chipActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+    chipText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.text,
+    },
+    chipTextActive: {
         color: '#000',
+        fontWeight: '800',
+    },
+    metricsList: {
+        gap: 10,
+    },
+    input: {
+        backgroundColor: mode === 'dark' ? '#18181b' : '#f8fafc',
+        borderRadius: 14,
+        color: colors.text,
+        fontSize: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    textArea: {
+        minHeight: 90,
+        textAlignVertical: 'top',
+        paddingTop: 12,
     },
     measurementRow: {
         flexDirection: 'row',
-        gap: 10,
-        marginBottom: 12,
+        gap: 8,
         alignItems: 'center',
     },
     measurementNameInput: {
-        flex: 2,
+        flex: 1.8,
     },
     measurementValueInput: {
-        flex: 1,
+        flex: 1.2,
     },
     removeMeasBtn: {
-        padding: 10,
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        width: 42,
+        height: 42,
         borderRadius: 12,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     addMeasBtn: {
         flexDirection: 'row',
@@ -439,15 +606,126 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingVertical: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.primary,
         borderStyle: 'dashed',
-        borderRadius: 16,
+        borderRadius: 14,
         gap: 8,
-        marginTop: 4,
+        marginTop: 12,
+        backgroundColor: mode === 'dark' ? 'rgba(34,197,94,0.04)' : '#f0fdf4',
     },
     addMeasBtnText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '700',
-        fontSize: 14,
-    }
+        fontSize: 13,
+    },
+    photosSubtitle: {
+        fontSize: 12,
+        color: colors.textMuted,
+        marginBottom: 14,
+        lineHeight: 16,
+    },
+    photoGrid: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    photoBox: {
+        flex: 1,
+    },
+    photoLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: colors.textMuted,
+        marginBottom: 6,
+        textAlign: 'center',
+    },
+    photoContainer: {
+        width: '100%',
+        aspectRatio: 3 / 4,
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        position: 'relative',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    photoActions: {
+        position: 'absolute',
+        bottom: 6,
+        left: 6,
+        right: 6,
+        flexDirection: 'row',
+        gap: 6,
+    },
+    photoActionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingVertical: 6,
+        borderRadius: 8,
+        gap: 4,
+    },
+    photoActionBtnDanger: {
+        flex: 0,
+        width: 32,
+        backgroundColor: 'rgba(239,68,68,0.85)',
+    },
+    photoActionBtnText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    photoBtn: {
+        width: '100%',
+        aspectRatio: 3 / 4,
+        backgroundColor: mode === 'dark' ? '#18181b' : '#f8fafc',
+        borderRadius: 16,
+        borderWidth: 1.5,
+        borderColor: colors.border,
+        borderStyle: 'dashed',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    photoPlaceholder: {
+        alignItems: 'center',
+        gap: 8,
+    },
+    photoIconCircle: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: mode === 'dark' ? '#27272a' : '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    photoPlaceholderText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: colors.primary,
+    },
+    submitBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.primary,
+        paddingVertical: 16,
+        borderRadius: 18,
+        gap: 8,
+        marginTop: 8,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    submitBtnText: {
+        fontWeight: '800',
+        fontSize: 16,
+        color: '#000',
+    },
 });

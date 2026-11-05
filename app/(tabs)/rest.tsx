@@ -16,7 +16,7 @@ import {
 const PRESETS = [30, 45, 60, 90, 120, 180];
 
 export default function RestScreen() {
-    const { colors } = useTheme();
+    const { colors, mode } = useTheme();
     const [timeLeft, setTimeLeft] = useState(60);
     const [isActive, setIsActive] = useState(false);
     const [totalTime, setTotalTime] = useState(60);
@@ -106,7 +106,7 @@ export default function RestScreen() {
 
             <View style={styles.controls}>
                 <TouchableOpacity
-                    style={[styles.controlBtn, { backgroundColor: colors.surfaceLight }]}
+                    style={[styles.controlBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
                     onPress={resetTimer}
                 >
                     <RotateCcw size={24} color={colors.text} />
@@ -117,9 +117,9 @@ export default function RestScreen() {
                     onPress={toggleTimer}
                 >
                     {isActive ? (
-                        <Pause size={32} color="#000" fill="#000" />
+                        <Pause size={32} color={mode === 'dark' ? '#000' : '#FFF'} fill={mode === 'dark' ? '#000' : '#FFF'} />
                     ) : (
-                        <Play size={32} color="#000" fill="#000" />
+                        <Play size={32} color={mode === 'dark' ? '#000' : '#FFF'} fill={mode === 'dark' ? '#000' : '#FFF'} />
                     )}
                 </TouchableOpacity>
 
@@ -143,7 +143,7 @@ export default function RestScreen() {
                         >
                             <Text style={[
                                 styles.presetBtnText,
-                                { color: totalTime === seconds ? '#000' : colors.text }
+                                { color: totalTime === seconds ? (mode === 'dark' ? '#000' : '#FFF') : colors.text }
                             ]}>
                                 {seconds}s
                             </Text>

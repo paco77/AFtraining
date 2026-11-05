@@ -80,25 +80,31 @@ export function getTotalRouteDistanceKm(coords: LocationPoint[]): number {
 
 // Define Background Task (Mobile only)
 if (Platform.OS !== 'web') {
-    TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) => {
-        if (error) {
-            console.warn('Background location task error:', error);
-            return;
+    try {
+        if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
+            TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) => {
+                if (error) {
+                    console.warn('Background location task error:', error);
+                    return;
+                }
+                if (data) {
+                    const { locations } = data;
+                    if (locations && locations.length > 0) {
+                        locations.forEach((loc: any) => {
+                            const newPoint: LocationPoint = {
+                                latitude: loc.coords.latitude,
+                                longitude: loc.coords.longitude,
+                                timestamp: loc.timestamp
+                            };
+                            globalBgRoute.push(newPoint);
+                        });
+                    }
+                }
+            });
         }
-        if (data) {
-            const { locations } = data;
-            if (locations && locations.length > 0) {
-                locations.forEach((loc: any) => {
-                    const newPoint: LocationPoint = {
-                        latitude: loc.coords.latitude,
-                        longitude: loc.coords.longitude,
-                        timestamp: loc.timestamp
-                    };
-                    globalBgRoute.push(newPoint);
-                });
-            }
-        }
-    });
+    } catch (e) {
+        console.warn('Could not register BACKGROUND_LOCATION_TASK:', e);
+    }
 }
 
 export const OutdoorActivityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -114,10 +120,9 @@ export const OutdoorActivityProvider: React.FC<{ children: React.ReactNode }> = 
     const timerRef = useRef<any>(null);
     const foregroundSubRef = useRef<Location.LocationSubscription | null>(null);
 
-    // Load saved activities on startup
+    // Load saved activities on startup (do not request location permissions on root mount)
     useEffect(() => {
         loadActivities();
-        fetchInitialLocation();
     }, []);
 
     const loadActivities = async () => {

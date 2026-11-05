@@ -1,20 +1,24 @@
 import { Colors, Spacing } from '@/constants/theme';
+import { useNutrition } from '@/context/NutritionContext';
+import { usePlans } from '@/context/PlanContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
-import { showToast } from '@/services/toast';
 import api from '@/services/api';
+import { getSafeTimestamp } from '@/services/dateUtils';
+import { showToast } from '@/services/toast';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
+    Activity,
     ArrowLeft,
     Camera,
     Check,
-    User,
-    Watch,
-    Activity,
     Plus,
-    Trash
+    Trash,
+    User,
+    Watch
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -34,9 +38,14 @@ export default function EditClientScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { clients, refreshProfile } = useUser();
+    const { clients, refreshProfile, deleteClient } = useUser();
+    const { fetchPlans } = usePlans();
+    const { fetchPlans: fetchNutritionPlans } = useNutrition();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
 
     const client = useMemo(() => clients.find(c => String(c.id) === String(id)), [clients, id]);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Personal Data
     const [name, setName] = useState('');
@@ -49,7 +58,7 @@ export default function EditClientScreen() {
     const [objectives, setObjectives] = useState('');
 
     // Metrics / Measurements
-    const [dynamicMeasurements, setDynamicMeasurements] = useState<{name: string; value: string}[]>([]);
+    const [dynamicMeasurements, setDynamicMeasurements] = useState<{ name: string; value: string }[]>([]);
 
     // Photos
     const [photos, setPhotos] = useState({
@@ -58,7 +67,7 @@ export default function EditClientScreen() {
         side: null as string | null,
         back: null as string | null,
     });
-    
+
     // Existing photo URLs (so we can show them if not overridden)
     const [existingPhotos, setExistingPhotos] = useState({
         profile: null as string | null,
@@ -80,7 +89,7 @@ export default function EditClientScreen() {
                 setPhone(client.phone || '');
                 setAge(client.age ? String(client.age) : '');
             }
-            
+
             // Note: client object in Context might not map all raw properties, 
             // but we can try to get them, or fetch the client fresh from the API if needed.
             // For now, we will do a fresh fetch to ensure we have ALL raw details (like initial_measurements)
@@ -88,7 +97,7 @@ export default function EditClientScreen() {
                 try {
                     const response = await api.get(`clients/${id}`);
                     const fullClient = response.data.data || response.data;
-                    
+
                     if (!isMounted) return;
 
                     // Remove debug alert
@@ -104,12 +113,12 @@ export default function EditClientScreen() {
                     // Parse measurements
                     let measurementsObj = null;
                     if (fullClient.measurements) {
-                        measurementsObj = typeof fullClient.measurements === 'string' 
-                            ? JSON.parse(fullClient.measurements) 
+                        measurementsObj = typeof fullClient.measurements === 'string'
+                            ? JSON.parse(fullClient.measurements)
                             : fullClient.measurements;
                     } else if (fullClient.initial_measurements) {
-                        measurementsObj = typeof fullClient.initial_measurements === 'string' 
-                            ? JSON.parse(fullClient.initial_measurements) 
+                        measurementsObj = typeof fullClient.initial_measurements === 'string'
+                            ? JSON.parse(fullClient.initial_measurements)
                             : fullClient.initial_measurements;
                     } else {
                         // Fallback: fetch from progress history (first evaluation)
@@ -118,12 +127,12 @@ export default function EditClientScreen() {
                             const progData = Array.isArray(progRes.data) ? progRes.data : progRes.data.data || [];
                             if (progData.length > 0) {
                                 // Get the oldest record
-                                const oldest = progData.sort((a: any, b: any) => 
-                                    new Date(a.created_at || a.recorded_at).getTime() - new Date(b.created_at || b.recorded_at).getTime()
+                                const oldest = progData.sort((a: any, b: any) =>
+                                    getSafeTimestamp(a.recorded_at || a.created_at) - getSafeTimestamp(b.recorded_at || b.created_at)
                                 )[0];
                                 if (oldest && oldest.measurements) {
-                                    measurementsObj = typeof oldest.measurements === 'string' 
-                                        ? JSON.parse(oldest.measurements) 
+                                    measurementsObj = typeof oldest.measurements === 'string'
+                                        ? JSON.parse(oldest.measurements)
                                         : oldest.measurements;
                                 }
                             }
@@ -141,7 +150,7 @@ export default function EditClientScreen() {
 
                     const formatUrl = (path: string | null) => {
                         if (!path) return null;
-                        
+
                         // Si la ruta es relativa (no empieza con http), asume que es de S3 (o puedes cambiarlo según tu entorno)
                         if (!path.startsWith('http')) {
                             return `https://aftraining-storage.sfo2.digitaloceanspaces.com/${path}`;
@@ -150,7 +159,7 @@ export default function EditClientScreen() {
                         // Si la API devuelve la URL de producción pero estamos probando en local (192.168.x.x),
                         // la imagen fallará en la app. La reemplazamos temporalmente para que apunte al servidor local:
                         if (path.includes('aftraining.skecomponent.mx/storage')) {
-                            return path.replace('https://aftraining.skecomponent.mx', 'http://192.168.3.198:8000');
+                            return path.replace('https://aftraining.skecomponent.mx', 'http://192.168.100.123:8000');
                         }
 
                         return path;
@@ -163,7 +172,7 @@ export default function EditClientScreen() {
                         side: formatUrl(fullClient.side_photo_url || fullClient.side_photo_path || fullClient.side_photo),
                         back: formatUrl(fullClient.back_photo_url || fullClient.back_photo_path || fullClient.back_photo),
                     });
-                    
+
                 } catch (error) {
                     console.error('Error fetching client details:', error);
                 } finally {
@@ -172,7 +181,7 @@ export default function EditClientScreen() {
                     }
                 }
             };
-            
+
             fetchFullClient();
         } else {
             if (isMounted) {
@@ -226,7 +235,7 @@ export default function EditClientScreen() {
             if (height) formData.append('height', height);
             if (trainingTime) formData.append('training_time', trainingTime);
             if (objectives) formData.append('objectives', objectives);
-            
+
             if (Object.keys(measurementsObj).length > 0) {
                 formData.append('measurements', JSON.stringify(measurementsObj));
             } else {
@@ -327,7 +336,7 @@ export default function EditClientScreen() {
                         <Image source={{ uri: currentUri! }} style={styles.previewImage} />
                     ) : (
                         <View style={styles.photoPlaceholder}>
-                            <Camera size={24} color={Colors.textMuted} />
+                            <Camera size={24} color={colors.textMuted} />
                             <Text style={styles.photoPlaceholderText}>Añadir foto</Text>
                         </View>
                     )}
@@ -336,11 +345,44 @@ export default function EditClientScreen() {
         );
     };
 
+    const handleDeleteClient = () => {
+        if (!client) return;
+
+        showToast.confirm(
+            'Eliminar Cliente',
+            `¿Estás seguro de que deseas eliminar permanentemente a "${client.name}"? Se borrarán todos sus planes, nutrición, historial, fotos y cuenta de forma irreversible.`,
+            [
+                {
+                    text: 'Eliminar permanentemente',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setIsDeleting(true);
+                            await deleteClient(String(client.id));
+                            if (fetchPlans) fetchPlans().catch(() => {});
+                            if (fetchNutritionPlans) fetchNutritionPlans().catch(() => {});
+                            showToast.success('Cliente y todos sus datos eliminados correctamente');
+                            router.replace('/(tabs)');
+                        } catch (error: any) {
+                            setIsDeleting(false);
+                            const msg = error.response?.data?.message || 'Error al eliminar el cliente';
+                            showToast.error(msg);
+                        }
+                    }
+                },
+                {
+                    text: 'Cancelar',
+                    style: 'cancel'
+                }
+            ]
+        );
+    };
+
     if (!isLoaded) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <Stack.Screen options={{ headerShown: false }} />
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -355,20 +397,26 @@ export default function EditClientScreen() {
 
             <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color={Colors.text} />
+                    <ArrowLeft size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Editar Cliente</Text>
-                <View style={{ width: 24 }} />
+                <TouchableOpacity onPress={handleDeleteClient} style={styles.headerDeleteBtn} disabled={isDeleting}>
+                    {isDeleting ? (
+                        <ActivityIndicator size="small" color={colors.danger || '#ef4444'} />
+                    ) : (
+                        <Trash size={20} color={colors.danger || '#ef4444'} />
+                    )}
+                </TouchableOpacity>
             </View>
 
             <ScrollView
-                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(styles.scroll.paddingBottom || 0, insets.bottom + 20) }]}
+                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(Spacing.md, insets.bottom + 20) }]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <User size={18} color={Colors.primary} />
+                        <User size={18} color={colors.primary} />
                         <Text style={styles.sectionTitle}>Datos Generales</Text>
                     </View>
 
@@ -381,7 +429,7 @@ export default function EditClientScreen() {
                                 <Image source={{ uri: photos.profile || existingPhotos.profile! }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
                             ) : (
                                 <View style={styles.photoPlaceholder}>
-                                    <Camera size={24} color={Colors.textMuted} />
+                                    <Camera size={24} color={colors.textMuted} />
                                     <Text style={styles.photoPlaceholderText}>Foto de Perfil</Text>
                                 </View>
                             )}
@@ -391,7 +439,7 @@ export default function EditClientScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Nombre Completo"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={name}
                         onChangeText={setName}
                     />
@@ -401,7 +449,7 @@ export default function EditClientScreen() {
                         placeholder="Correo Electrónico"
                         keyboardType="email-address"
                         autoCapitalize="none"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={email}
                         onChangeText={setEmail}
                     />
@@ -410,7 +458,7 @@ export default function EditClientScreen() {
                         style={styles.input}
                         placeholder="Teléfono Celular"
                         keyboardType="phone-pad"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={phone}
                         onChangeText={setPhone}
                     />
@@ -420,7 +468,7 @@ export default function EditClientScreen() {
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Edad"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={age}
                             onChangeText={setAge}
                         />
@@ -428,7 +476,7 @@ export default function EditClientScreen() {
                             style={[styles.input, { flex: 1, marginLeft: 8 }]}
                             placeholder="Peso (kg)"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={weight}
                             onChangeText={setWeight}
                         />
@@ -439,7 +487,7 @@ export default function EditClientScreen() {
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Estatura (cm)"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={height}
                             onChangeText={setHeight}
                         />
@@ -449,14 +497,14 @@ export default function EditClientScreen() {
 
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Watch size={18} color={Colors.primary} />
+                        <Watch size={18} color={colors.primary} />
                         <Text style={styles.sectionTitle}>Experiencia y Objetivos</Text>
                     </View>
 
                     <TextInput
                         style={styles.input}
                         placeholder="Tiempo entrenando (ej: 6 meses)"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={trainingTime}
                         onChangeText={setTrainingTime}
                     />
@@ -464,7 +512,7 @@ export default function EditClientScreen() {
                     <TextInput
                         style={[styles.input, styles.textArea]}
                         placeholder="Objetivos (ej: Perder grasa, ganar músculo...)"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         multiline
                         numberOfLines={3}
                         value={objectives}
@@ -474,16 +522,16 @@ export default function EditClientScreen() {
 
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Activity size={18} color={Colors.primary} />
+                        <Activity size={18} color={colors.primary} />
                         <Text style={styles.sectionTitle}>Biometría Inicial</Text>
                     </View>
-                    
+
                     {dynamicMeasurements.map((meas, idx) => (
                         <View key={idx} style={styles.measurementRow}>
                             <TextInput
                                 style={[styles.input, styles.measurementNameInput]}
                                 placeholder="Nombre (ej. Pecho)"
-                                placeholderTextColor={Colors.textMuted}
+                                placeholderTextColor={colors.textMuted}
                                 value={meas.name}
                                 onChangeText={(val) => updateMeasurement(idx, 'name', val)}
                             />
@@ -491,28 +539,28 @@ export default function EditClientScreen() {
                                 style={[styles.input, styles.measurementValueInput]}
                                 placeholder="Valor"
                                 keyboardType="decimal-pad"
-                                placeholderTextColor={Colors.textMuted}
+                                placeholderTextColor={colors.textMuted}
                                 value={meas.value}
                                 onChangeText={(val) => updateMeasurement(idx, 'value', val)}
                             />
-                            <TouchableOpacity 
-                                style={styles.removeMeasBtn} 
+                            <TouchableOpacity
+                                style={styles.removeMeasBtn}
                                 onPress={() => handleRemoveMeasurement(idx)}
                             >
-                                <Trash size={20} color={Colors.error || '#ef4444'} />
+                                <Trash size={20} color={colors.danger || '#ef4444'} />
                             </TouchableOpacity>
                         </View>
                     ))}
-                    
+
                     <TouchableOpacity style={styles.addMeasBtn} onPress={handleAddMeasurement}>
-                        <Plus size={16} color={Colors.primary} />
+                        <Plus size={16} color={colors.primary} />
                         <Text style={styles.addMeasBtnText}>Añadir medida</Text>
                     </TouchableOpacity>
                 </View>
 
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Camera size={18} color={Colors.primary} />
+                        <Camera size={18} color={colors.primary} />
                         <Text style={styles.sectionTitle}>Fotos Iniciales</Text>
                     </View>
                     <View style={styles.photoGrid}>
@@ -526,14 +574,30 @@ export default function EditClientScreen() {
                     style={[styles.submitBtn, isSaving && { opacity: 0.7 }]}
                     activeOpacity={0.8}
                     onPress={handleSave}
-                    disabled={isSaving}
+                    disabled={isSaving || isDeleting}
                 >
                     {isSaving ? (
-                        <ActivityIndicator color="#000" />
+                        <ActivityIndicator color={mode === 'dark' ? '#000' : '#FFF'} />
                     ) : (
                         <>
-                            <Check size={20} color="#000" />
+                            <Check size={20} color={mode === 'dark' ? '#000' : '#FFF'} />
                             <Text style={styles.submitBtnText}>Guardar Cambios</Text>
+                        </>
+                    )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.deleteBtn, isDeleting && { opacity: 0.7 }]}
+                    activeOpacity={0.8}
+                    onPress={handleDeleteClient}
+                    disabled={isDeleting || isSaving}
+                >
+                    {isDeleting ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <>
+                            <Trash size={18} color="#fff" />
+                            <Text style={styles.deleteBtnText}>Eliminar Cliente y Todo su Historial</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -544,10 +608,10 @@ export default function EditClientScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -556,19 +620,19 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.md,
         paddingTop: Platform.OS === 'ios' ? 60 : 20,
         paddingBottom: 20,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backBtn: {
         padding: 8,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         borderRadius: 12,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
         letterSpacing: -0.5,
     },
     scroll: {
@@ -576,11 +640,11 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: 28,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         padding: 20,
         borderRadius: 24,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -591,20 +655,20 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 15,
         fontWeight: '800',
-        color: Colors.primary,
+        color: colors.primary,
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
     input: {
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         borderRadius: 16,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         paddingHorizontal: 16,
         paddingVertical: 14,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: 'transparent',
+        borderColor: colors.border,
     },
     row: {
         flexDirection: 'row',
@@ -627,16 +691,16 @@ const styles = StyleSheet.create({
     photoLabel: {
         fontSize: 11,
         fontWeight: '600',
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginBottom: 8,
     },
     photoBtn: {
         width: '100%',
         aspectRatio: 0.8,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         borderStyle: 'dashed',
         justifyContent: 'center',
         alignItems: 'center',
@@ -644,7 +708,7 @@ const styles = StyleSheet.create({
     },
     photoBtnFilled: {
         borderStyle: 'solid',
-        borderColor: Colors.primary,
+        borderColor: colors.primary,
     },
     photoPlaceholder: {
         alignItems: 'center',
@@ -653,7 +717,7 @@ const styles = StyleSheet.create({
     photoPlaceholderText: {
         fontSize: 10,
         fontWeight: '500',
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     previewImage: {
         width: '100%',
@@ -663,12 +727,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingVertical: 18,
         borderRadius: 20,
         gap: 10,
         marginTop: 10,
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -677,7 +741,7 @@ const styles = StyleSheet.create({
     submitBtnText: {
         fontWeight: '800',
         fontSize: 17,
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     measurementRow: {
         flexDirection: 'row',
@@ -702,15 +766,35 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingVertical: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         borderStyle: 'dashed',
         borderRadius: 16,
         gap: 8,
         marginTop: 4,
     },
     addMeasBtnText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '700',
         fontSize: 14,
+    },
+    headerDeleteBtn: {
+        padding: 8,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderRadius: 12,
+    },
+    deleteBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.danger || '#ef4444',
+        paddingVertical: 18,
+        borderRadius: 20,
+        gap: 10,
+        marginTop: 14,
+    },
+    deleteBtnText: {
+        fontWeight: '800',
+        fontSize: 16,
+        color: '#fff',
     }
 });

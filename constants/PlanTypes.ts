@@ -12,6 +12,7 @@ export interface PlannedExercise {
     minReps: number;      // Range min
     maxReps: number;      // Range max
     instruction?: string; // Optional coaching comment
+    videoUrl?: string;    // Custom video/link for this specific plan exercise
     supersetId?: string;  // Group ID for Biseries/Triseries
 }
 

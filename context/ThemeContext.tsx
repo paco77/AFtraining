@@ -1,4 +1,4 @@
-import { Colors, KineticColors, setActiveTheme, ThemeMode } from '@/constants/theme';
+import { Colors, KineticColors, LightColors, setActiveTheme, ThemeMode } from '@/constants/theme';
 import React, { createContext, useCallback, useContext, useState } from 'react';
 
 interface ThemeContextType {
@@ -24,10 +24,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         });
     }, []);
 
-    const colors = KineticColors; // Forced dark editorial mode
+    const currentColors = mode === 'dark' ? KineticColors : LightColors;
 
     return (
-        <ThemeContext.Provider value={{ mode, toggle, colors }}>
+        <ThemeContext.Provider value={{ mode, toggle, colors: currentColors }}>
             {children}
         </ThemeContext.Provider>
     );

@@ -1,10 +1,10 @@
-import { Exercise } from '@/constants/ExerciseData';
+import { Exercise, isSameMuscleGroup, sanitizeExerciseGroup } from '@/constants/ExerciseData';
 import { DayLog, MonthlyPlan, MONTHS, SetLog } from '@/constants/PlanTypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { showToast } from '@/services/toast';
-import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
+import { formatToLocalISO } from '@/services/dateUtils';
 import NetInfo from '@react-native-community/netinfo';
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import api from '../services/api';
 import { useUser } from './UserContext';
@@ -45,6 +45,7 @@ interface PlanContextType {
     // Offline sync
     pendingOfflineLogs: number;
     syncOfflineLogs: () => Promise<void>;
+    isLoadingPlans: boolean;
 }
 
 const PlanContext = createContext<PlanContextType>({
@@ -75,20 +76,27 @@ const PlanContext = createContext<PlanContextType>({
     updateExercise: async () => undefined,
     pendingOfflineLogs: 0,
     syncOfflineLogs: async () => { },
+    isLoadingPlans: false,
 });
 
 let globalMuscleGroupIdToName: Record<string, string> = {};
 
 const mapApiExerciseToFrontend = (apiEx: any): Exercise => {
+    let rawMg = typeof apiEx.muscle_group === 'string'
+        ? (globalMuscleGroupIdToName[apiEx.muscle_group] || apiEx.muscle_group)
+        : apiEx.muscle_group?.name || (apiEx.muscle_group_id ? globalMuscleGroupIdToName[String(apiEx.muscle_group_id)] : undefined);
+
+    const safeMg = sanitizeExerciseGroup(apiEx.name, rawMg);
+
     return {
         id: String(apiEx.id),
         name: apiEx.name,
-        muscleGroup: typeof apiEx.muscle_group === 'string'
-            ? apiEx.muscle_group
-            : apiEx.muscle_group?.name || 'Core',
+        muscleGroup: safeMg,
         equipment: apiEx.equipment || '',
         description: apiEx.description || '',
-        primaryMuscles: apiEx.primary_muscles || [],
+        primaryMuscles: (Array.isArray(apiEx.primary_muscles) && apiEx.primary_muscles.length > 0)
+            ? apiEx.primary_muscles
+            : [safeMg],
         secondaryMuscles: apiEx.secondary_muscles || [],
         benefits: apiEx.benefits || [],
         level: apiEx.level || 'Principiante',
@@ -136,6 +144,7 @@ const mapApiPlanToFrontend = (apiPlan: any): MonthlyPlan => {
                 minReps: pe.min_reps || 0,
                 maxReps: pe.max_reps || 0,
                 instruction: pe.instruction,
+                videoUrl: pe.video_url || pe.videoUrl || undefined,
                 supersetId: pe.superset_id || pe.supersetId
             }))
         })),
@@ -143,24 +152,13 @@ const mapApiPlanToFrontend = (apiPlan: any): MonthlyPlan => {
     };
 };
 
-// ─── Cache Helpers ────────────────────────────────────────────────────────────
-const ensureCacheDir = () => {
-    const dir = new Directory(Paths.document, CACHE_SUBDIR);
-    if (!dir.exists) {
-        dir.create({ intermediates: true });
-    }
-    return dir;
-};
-
+// ─── Cache Helpers (AsyncStorage based) ───────────────────────────────────────
 const saveToCache = (filename: string, data: any) => {
     try {
-        const dir = ensureCacheDir();
-        const file = new ExpoFile(dir, filename);
-        if (file.exists) {
-            file.delete();
-        }
-        file.create();
-        file.write(JSON.stringify(data));
+        const key = `@af_cache_${filename.replace(/\.json$/, '')}`;
+        AsyncStorage.setItem(key, JSON.stringify(data)).catch((e) => {
+            console.warn('Cache write failed:', e);
+        });
     } catch (e) {
         console.warn('Cache write failed:', e);
     }
@@ -168,9 +166,9 @@ const saveToCache = (filename: string, data: any) => {
 
 const loadFromCache = async <T,>(filename: string): Promise<T | null> => {
     try {
-        const file = new ExpoFile(Paths.document, CACHE_SUBDIR, filename);
-        if (!file.exists) return null;
-        const raw = await file.text();
+        const key = `@af_cache_${filename.replace(/\.json$/, '')}`;
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) return null;
         return JSON.parse(raw) as T;
     } catch (e) {
         console.warn('Cache read failed:', e);
@@ -180,6 +178,7 @@ const loadFromCache = async <T,>(filename: string): Promise<T | null> => {
 
 export function PlanProvider({ children }: { children: React.ReactNode }) {
     const [plans, setPlans] = useState<MonthlyPlan[]>([]);
+    const [isLoadingPlans, setIsLoadingPlans] = useState<boolean>(true);
     const [allExercises, setAllExercises] = useState<Exercise[]>([]);
     const [muscleGroups, setMuscleGroups] = useState<string[]>([]);
     const { currentUser, isInitialized, logout } = useUser();
@@ -191,28 +190,38 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 api.get('exercises'),
                 api.get('muscle-groups')
             ]);
-            const exercises = exResponse.data.data.map(mapApiExerciseToFrontend);
             const groups = mgResponse.data.data.map((mg: any) => {
                 globalMuscleGroupIdToName[String(mg.id)] = mg.name;
                 return mg.name;
             });
+            const exercises = exResponse.data.data.map(mapApiExerciseToFrontend);
             setAllExercises(exercises);
             setMuscleGroups(groups);
             // Cache on success
             saveToCache('exercises.json', exercises);
             saveToCache('muscle_groups.json', groups);
-        } catch (error) {
-            console.error('Error fetching metadata:', error);
+        } catch (error: any) {
+            const status = error.response?.status;
+            if (status === 401) {
+                logout();
+                return;
+            }
+            if (!status || status >= 500) {
+                console.error('Error fetching metadata:', error);
+            }
             // Fallback: load from cache
             const cachedEx = await loadFromCache<Exercise[]>('exercises.json');
             const cachedMg = await loadFromCache<string[]>('muscle_groups.json');
             if (cachedEx) setAllExercises(cachedEx);
             if (cachedMg) setMuscleGroups(cachedMg);
         }
-    }, [currentUser, isInitialized]);
+    }, [currentUser, isInitialized, logout]);
 
     const fetchPlans = useCallback(async () => {
-        if (!isInitialized || !currentUser) return;
+        if (!isInitialized || !currentUser) {
+            setIsLoadingPlans(false);
+            return;
+        }
 
         try {
             const response = await api.get('plans');
@@ -240,6 +249,8 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 setPlans(cached);
                 showToast.info('Sin conexión — mostrando plan guardado');
             }
+        } finally {
+            setIsLoadingPlans(false);
         }
     }, [currentUser, isInitialized, logout]);
 
@@ -266,6 +277,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                         min_reps: Number(ex.minReps) || 0,
                         max_reps: Number(ex.maxReps) || 0,
                         instruction: ex.instruction,
+                        video_url: ex.videoUrl,
                         superset_id: ex.supersetId
                     }))
                 }))
@@ -304,6 +316,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                         min_reps: Number(ex.minReps) || 0,
                         max_reps: Number(ex.maxReps) || 0,
                         instruction: ex.instruction,
+                        video_url: ex.videoUrl,
                         superset_id: ex.supersetId
                     }))
                 }))
@@ -319,9 +332,17 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     const addExercise = useCallback(async (exercise: Exercise): Promise<Exercise | undefined> => {
         try {
+            let mgId: number | null = null;
+            Object.entries(globalMuscleGroupIdToName).forEach(([id, name]) => {
+                if (isSameMuscleGroup(name, exercise.muscleGroup)) {
+                    mgId = Number(id);
+                }
+            });
+
             let dataToSend: any = {
                 name: exercise.name,
                 muscle_group: exercise.muscleGroup,
+                muscle_group_id: mgId,
                 equipment: exercise.equipment,
                 description: exercise.description,
                 primary_muscles: exercise.primaryMuscles,
@@ -378,9 +399,17 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     const updateExercise = useCallback(async (id: string, exercise: Exercise): Promise<Exercise | undefined> => {
         try {
+            let mgId: number | null = null;
+            Object.entries(globalMuscleGroupIdToName).forEach(([gId, name]) => {
+                if (isSameMuscleGroup(name, exercise.muscleGroup)) {
+                    mgId = Number(gId);
+                }
+            });
+
             let dataToSend: any = {
                 name: exercise.name,
                 muscle_group: exercise.muscleGroup,
+                muscle_group_id: mgId,
                 equipment: exercise.equipment,
                 description: exercise.description,
                 primary_muscles: exercise.primaryMuscles,
@@ -471,26 +500,32 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     const saveLog = useCallback(async (planId: string, log: DayLog) => {
         let payload: any;
         try {
-            const plan = plans.find(p => p.id === planId);
-            const day = plan?.days.find(d => d.dayNumber === log.dayNumber);
+            const plan = plans.find(p => String(p.id) === String(planId));
+            const day = plan?.days.find(d => Number(d.dayNumber) === Number(log.dayNumber));
 
             if (!day?.id) {
                 showToast.error('No se encontró el ID del día');
-                return;
+                throw new Error('No se encontró el ID del día de entrenamiento');
             }
 
-            payload = {
-                training_day_id: day.id,
-                start_time: log.sessions[0]?.date,
-                end_time: log.sessions[0]?.duration 
-                    ? new Date(new Date(log.sessions[0]?.date).getTime() + log.sessions[0].duration * 60000).toISOString()
-                    : log.sessions[0]?.date,
-                duration: log.sessions[0]?.duration,
-                comments: log.sessions[0]?.comment || '',
-                exercises: log.sessions[0]?.exercises
-                    .map(exLog => ({
-                        planned_exercise_id: exLog.exerciseId,
-                        set_logs: exLog.setLogs
+            const rawDate = log.sessions[0]?.date;
+            const startDate = rawDate ? new Date(rawDate) : new Date();
+            const duration = log.sessions[0]?.duration;
+            const endDate = duration
+                ? new Date(startDate.getTime() + duration * 60000)
+                : startDate;
+
+            const exercisesPayload = (log.sessions[0]?.exercises || [])
+                .map(exLog => {
+                    const pe = day.exercises?.find(e => 
+                        String(e.id) === String(exLog.exerciseId) || 
+                        String(e.exercise?.id) === String(exLog.exerciseId)
+                    );
+                    const safePlannedExId = pe?.id || exLog.exerciseId;
+
+                    return {
+                        planned_exercise_id: safePlannedExId,
+                        set_logs: (exLog.setLogs || [])
                             .map((set, idx) => ({
                                 set_number: idx + 1,
                                 weight: Number(set.weight) || 0,
@@ -498,8 +533,22 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                                 reps: Number(set.reps) || 0
                             }))
                             .filter(set => set.weight > 0 || set.reps > 0)
-                    }))
-                    .filter(ex => ex.set_logs.length > 0)
+                    };
+                })
+                .filter(ex => ex.set_logs.length > 0);
+
+            if (exercisesPayload.length === 0) {
+                showToast.warning('Debes registrar al menos una serie con repeticiones o peso para guardar la sesión.');
+                throw new Error('No hay series con repeticiones o peso registradas');
+            }
+
+            payload = {
+                training_day_id: day.id,
+                start_time: formatToLocalISO(startDate),
+                end_time: formatToLocalISO(endDate),
+                duration: duration,
+                comments: log.sessions[0]?.comment || '',
+                exercises: exercisesPayload
             };
 
             await api.post('workouts/bulk', payload);
@@ -518,7 +567,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                     await AsyncStorage.setItem(OFFLINE_WORKOUTS_KEY, JSON.stringify(queue));
                     setPendingOfflineLogs(queue.length);
                     showToast.info('Entrenamiento guardado (Modo Sin Conexión). Se sincronizará automáticamente.');
-                    return; // Skip normal error handling
+                    return; // Successfully queued offline
                 } catch (queueError) {
                     console.error('Failed to queue offline workout:', queueError);
                 }
@@ -530,10 +579,11 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 console.warn('[saveLog] Validation Error:', error.response?.data || error);
             }
             
-            const errMsg = error.response?.data?.message || 'Error al guardar entrenamiento';
+            const errMsg = error.response?.data?.message || error.message || 'Error al guardar entrenamiento';
             showToast.error(errMsg);
+            throw error;
         }
-    }, [plans, fetchPlans]);
+    }, [plans, fetchPlans, fetchHistory]);
 
     const syncOfflineLogs = useCallback(async () => {
         try {
@@ -597,18 +647,19 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null>(null);
     const [pendingOfflineLogs, setPendingOfflineLogs] = useState<number>(0);
 
-    // Limpiar estado de la sesión si se cierra sesión
+    const isRestoringSessionRef = useRef(false);
+
+    // Limpiar estado en memoria si no hay usuario (sin borrar almacenamiento para evitar pérdidas accidentales)
     useEffect(() => {
-        if (!currentUser) {
+        if (isInitialized && !currentUser) {
             setActiveSessionDay(null);
             setActivePlanId(null);
             setSessionLogs({});
             setCompletedSets({});
             setComment('');
             setSessionStartTime(null);
-            AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
         }
-    }, [currentUser]);
+    }, [isInitialized, currentUser]);
 
     // Initialize pendingOfflineLogs count
     useEffect(() => {
@@ -628,57 +679,87 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     // Restore unfinished session on init
     useEffect(() => {
-        if (!isInitialized || !currentUser) {
-            if (!currentUser) setLastLoadedUserId(null);
+        if (!isInitialized) return;
+
+        // Si no hay usuario autenticado, limpiar todo estado de sesión en memoria
+        if (!currentUser) {
+            setActiveSessionDay(null);
+            setActivePlanId(null);
+            setSessionLogs({});
+            setCompletedSets({});
+            setComment('');
+            setSessionStartTime(null);
+            setLastLoadedUserId(null);
             return;
         }
+
         if (lastLoadedUserId === currentUser.id) return;
 
         const loadSession = async () => {
             try {
-                const stored = await AsyncStorage.getItem(WORKOUT_SESSION_KEY);
-                if (stored) {
-                    const parsed = JSON.parse(stored);
-                    
-                    if (parsed.userId && parsed.userId !== currentUser.id) {
-                        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
-                        return;
+                let parsed: any = null;
+                // 1. Probar desde AsyncStorage
+                try {
+                    const stored = await AsyncStorage.getItem(WORKOUT_SESSION_KEY);
+                    if (stored) {
+                        parsed = JSON.parse(stored);
                     }
-
-                    if (!parsed.dayNumber || !parsed.planId) {
-                        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
-                        return;
-                    }
-
-                    setActivePlanId(parsed.planId);
-                    setActiveSessionDay(parsed.dayNumber);
-                    setSessionLogs(parsed.sessionLogs || {});
-                    setCompletedSets(parsed.completedSets || {});
-                    setComment(parsed.comment || '');
-                    if (parsed.sessionStartTime) {
-                        setSessionStartTime(parsed.sessionStartTime);
-                    }
-                    
-                    import('react-native').then(({ Alert }) => {
-                        Alert.alert(
-                            'Sesión sin terminar',
-                            'Tienes una sesión de entrenamiento activa. ¿Deseas continuarla ahora?',
-                            [
-                                { text: 'Más tarde', style: 'cancel' },
-                                { 
-                                    text: 'Continuar sesión', 
-                                    onPress: () => {
-                                        import('expo-router').then(({ router }) => {
-                                            router.push('/(tabs)/workout');
-                                        });
-                                    }
-                                }
-                            ]
-                        );
-                    });
+                } catch (readErr) {
+                    console.error('Error leyendo sesión de AsyncStorage:', readErr);
                 }
+
+                // 2. Si no está en AsyncStorage, buscar en caché de archivo
+                if (!parsed) {
+                    parsed = await loadFromCache('active_workout_session.json');
+                }
+
+                if (!parsed) return;
+
+                // Validación estricta: La sesión debe pertenecer explícitamente al usuario actual
+                if (!parsed.userId || String(parsed.userId) !== String(currentUser.id)) {
+                    // Si no tiene usuario o es de otro usuario, limpiar registro residual
+                    await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+                    await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
+                    return;
+                }
+
+                // Validación de expiración: Una sesión de entrenamiento caduca a las 12 horas
+                const now = Date.now();
+                if (parsed.sessionStartTime) {
+                    const elapsedHours = (now - Number(parsed.sessionStartTime)) / (1000 * 60 * 60);
+                    if (elapsedHours > 12) {
+                        // Sesión antigua/expirada: descartar automáticamente de almacenamiento
+                        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+                        await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
+                        return;
+                    }
+                } else {
+                    // Sin fecha de inicio válida: descartar registro huérfano
+                    await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+                    await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
+                    return;
+                }
+
+                if (parsed.dayNumber === undefined || parsed.dayNumber === null || !parsed.planId) {
+                    await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+                    await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
+                    return;
+                }
+
+                isRestoringSessionRef.current = true;
+                setActivePlanId(String(parsed.planId));
+                setActiveSessionDay(Number(parsed.dayNumber));
+                setSessionLogs(parsed.sessionLogs || {});
+                setCompletedSets(parsed.completedSets || {});
+                setComment(parsed.comment || '');
+                setSessionStartTime(Number(parsed.sessionStartTime));
+
+                setTimeout(() => {
+                    isRestoringSessionRef.current = false;
+                }, 500);
+
             } catch (e) {
-                console.error('Failed to load active session from AsyncStorage', e);
+                console.error('Error al restaurar sesión activa:', e);
             } finally {
                 setLastLoadedUserId(currentUser.id);
             }
@@ -688,7 +769,9 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
 
     // Save session automatically whenever state changes
     useEffect(() => {
-        if (activeSessionDay !== null && activePlanId !== null && currentUser) {
+        if (isRestoringSessionRef.current) return;
+        if (!currentUser) return;
+        if (activeSessionDay !== null && activePlanId !== null) {
             const dataToSave = {
                 userId: currentUser.id,
                 planId: activePlanId,
@@ -698,19 +781,41 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
                 comment,
                 sessionStartTime
             };
-            AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(dataToSave)).catch(console.error);
+            AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(dataToSave)).catch(e => {
+                console.error('Error al guardar sesión activa en AsyncStorage:', e);
+            });
+            saveToCache('active_workout_session.json', dataToSave);
         }
     }, [activeSessionDay, activePlanId, sessionLogs, completedSets, comment, sessionStartTime, currentUser]);
 
     const startWorkoutSession = useCallback((planId: string, dayNumber: number, initialLogs: Record<string, SetLog[]>) => {
+        if (!currentUser) return;
+        const now = Date.now();
         setActivePlanId(planId);
         setActiveSessionDay(dayNumber);
         setSessionLogs(initialLogs);
         setCompletedSets({});
         setComment('');
-        setSessionStartTime(Date.now());
+        setSessionStartTime(now);
+
+        const initialData = {
+            userId: currentUser.id,
+            planId,
+            dayNumber,
+            sessionLogs: initialLogs,
+            completedSets: {},
+            comment: '',
+            sessionStartTime: now
+        };
+
+        // Guardar inmediatamente tanto en AsyncStorage como en caché de archivo
+        AsyncStorage.setItem(WORKOUT_SESSION_KEY, JSON.stringify(initialData)).catch(e => {
+            console.error('Error al guardar sesión inicial en AsyncStorage:', e);
+        });
+        saveToCache('active_workout_session.json', initialData);
+
         showToast.info(`Sesión iniciada: Día ${dayNumber}`);
-    }, []);
+    }, [currentUser]);
 
     const finishWorkoutSession = useCallback(async () => {
         setActiveSessionDay(null);
@@ -719,7 +824,8 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         setCompletedSets({});
         setComment('');
         setSessionStartTime(null);
-        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
+        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+        await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
         showToast.success('Sesión finalizada');
     }, []);
 
@@ -730,7 +836,8 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         setCompletedSets({});
         setComment('');
         setSessionStartTime(null);
-        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY);
+        await AsyncStorage.removeItem(WORKOUT_SESSION_KEY).catch(() => {});
+        await AsyncStorage.removeItem('@af_cache_active_workout_session').catch(() => {});
         showToast.info('Sesión descartada');
     }, []);
 
@@ -762,7 +869,8 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
             addExercise,
             updateExercise,
             pendingOfflineLogs,
-            syncOfflineLogs
+            syncOfflineLogs,
+            isLoadingPlans
         }}>
             {children}
         </PlanContext.Provider>

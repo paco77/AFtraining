@@ -1,5 +1,6 @@
 import { MonthlyPlan, PlannedExercise } from '@/constants/PlanTypes';
 import { Colors, Spacing } from '@/constants/theme';
+import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import api from '@/services/api';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,6 +31,8 @@ export default function PlanDetails() {
     const router = useRouter();
     const { clients, currentUser } = useUser();
     const insets = useSafeAreaInsets();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [colors, mode]);
 
     const [plan, setPlan] = useState<MonthlyPlan | null>(null);
     const [history, setHistory] = useState<any[]>([]);
@@ -82,7 +85,7 @@ export default function PlanDetails() {
 
             // Fetch history. If user is coach, we must specify client_id
             const params: any = {};
-            if (currentUser?.role === 'coach' || currentUser?.role === 'admin') {
+            if (currentUser?.role === 'coach' || (currentUser?.role as any) === 'admin') {
                 params.client_id = mappedPlan.assignedClientId;
             }
             
@@ -167,14 +170,14 @@ export default function PlanDetails() {
             <View key={pe.id} style={styles.exerciseCard}>
                 <View style={styles.exerciseHeader}>
                     <View style={styles.exerciseIconBg}>
-                        <Dumbbell size={16} color={Colors.primary} />
+                        <Dumbbell size={16} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.exerciseName}>{pe.exercise.name}</Text>
                         <Text style={styles.exerciseMuscle}>{pe.exercise.muscleGroup}</Text>
                     </View>
                     <View style={styles.targetBadge}>
-                        <Target size={12} color={Colors.accent} />
+                        <Target size={12} color={colors.accent || colors.primary} />
                         <Text style={styles.targetText}>{pe.sets}x{pe.minReps}-{pe.maxReps}</Text>
                     </View>
                 </View>
@@ -186,12 +189,12 @@ export default function PlanDetails() {
                 {exerciseHistory.length > 0 ? (
                     <View style={styles.historySection}>
                         <View style={styles.historyLabelRow}>
-                            <TrendingUp size={12} color={Colors.primary} />
+                            <TrendingUp size={12} color={colors.primary} />
                             <Text style={styles.historyLabel}>Último registro ({new Date(lastSession.date).toLocaleDateString()}):</Text>
                         </View>
                         <View style={styles.setsList}>
                             {lastSession.sets.map((set: any, idx: number) => (
-                                <View key={idx} style={[styles.setInfo, { backgroundColor: Colors.surfaceLight }]}>
+                                <View key={idx} style={[styles.setInfo, { backgroundColor: colors.surfaceLight }]}>
                                     <Text style={styles.setNumber}>S{set.set_number}</Text>
                                     <View style={styles.setMetrics}>
                                         <Text style={styles.metricValue}>{set.reps} <Text style={styles.metricLabel}>reps</Text></Text>
@@ -214,7 +217,7 @@ export default function PlanDetails() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.loadingText}>Cargando detalles del plan...</Text>
             </View>
         );
@@ -237,24 +240,24 @@ export default function PlanDetails() {
                 headerShown: true,
                 headerTitle: 'Detalle del Plan',
                 headerTransparent: true,
-                headerTintColor: '#fff',
+                headerTintColor: colors.text,
                 headerLeft: () => (
                     <TouchableOpacity onPress={() => router.back()} style={styles.headerBack}>
-                        <ArrowLeft size={24} color="#fff" />
+                        <ArrowLeft size={24} color={colors.text} />
                     </TouchableOpacity>
                 ),
             }} />
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} />
 
             <View style={[styles.topHeader, { paddingTop: Math.max(insets.top, 20) + 30 }]}>
                 <View style={styles.planSummary}>
                     <View style={styles.planIconCircle}>
-                        <ClipboardList size={28} color={Colors.primary} />
+                        <ClipboardList size={28} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.planTitleMain}>{plan.month} {plan.year}</Text>
                         <View style={styles.clientRow}>
-                            <User size={14} color={Colors.textMuted} />
+                            <User size={14} color={colors.textMuted} />
                             <Text style={styles.clientNameText}>{client?.name || 'Cargando cliente...'}</Text>
                         </View>
                     </View>
@@ -274,7 +277,7 @@ export default function PlanDetails() {
                     <View style={styles.metaItem}>
                         <Text style={styles.metaLabel}>Progreso</Text>
                         <Text style={styles.metaValue}>{history.length} sesiones</Text>
-                        <Text style={{ fontSize: 8, color: Colors.textMuted }}>ID:{id}</Text>
+                        <Text style={{ fontSize: 8, color: colors.textMuted }}>ID:{id}</Text>
                     </View>
                 </View>
             </View>
@@ -293,7 +296,7 @@ export default function PlanDetails() {
                             activeOpacity={0.8}
                         >
                             <View style={styles.dayTitleWrap}>
-                                <View style={[styles.dayNumberCircle, { backgroundColor: Colors.primary + '15' }]}>
+                                <View style={[styles.dayNumberCircle, { backgroundColor: colors.primary + '15' }]}>
                                     <Text style={styles.dayNumberText}>{day.dayNumber}</Text>
                                 </View>
                                 <View>
@@ -302,9 +305,9 @@ export default function PlanDetails() {
                                 </View>
                             </View>
                             {expandedDays.has(day.dayNumber) ? (
-                                <ChevronUp size={20} color={Colors.textMuted} />
+                                <ChevronUp size={20} color={colors.textMuted} />
                             ) : (
-                                <ChevronDown size={20} color={Colors.textMuted} />
+                                <ChevronDown size={20} color={colors.textMuted} />
                             )}
                         </TouchableOpacity>
 
@@ -328,7 +331,7 @@ export default function PlanDetails() {
                                     activeOpacity={0.7}
                                 >
                                     <View style={styles.sessionInfoLeft}>
-                                        <View style={[styles.sessionDot, { backgroundColor: session.isFromCurrentPlan ? Colors.primary : Colors.textMuted }]} />
+                                        <View style={[styles.sessionDot, { backgroundColor: session.isFromCurrentPlan ? colors.primary : colors.textMuted }]} />
                                         <View>
                                             <Text style={styles.sessionLabel}>{session.training_day?.label || 'Sesión'}</Text>
                                             <Text style={styles.sessionDate}>
@@ -336,7 +339,7 @@ export default function PlanDetails() {
                                             </Text>
                                         </View>
                                     </View>
-                                    {isExpanded ? <ChevronUp size={20} color={Colors.textMuted} /> : <ChevronDown size={20} color={Colors.textMuted} />}
+                                    {isExpanded ? <ChevronUp size={20} color={colors.textMuted} /> : <ChevronDown size={20} color={colors.textMuted} />}
                                 </TouchableOpacity>
 
                                 {isExpanded && (
@@ -346,9 +349,9 @@ export default function PlanDetails() {
                                                 <Text style={styles.exLogName}>{exLog.planned_exercise?.exercise?.name || 'Ejercicio'}</Text>
                                                 <View style={styles.setLogsGrid}>
                                                     {(exLog.setLogs || exLog.set_logs || exLog.sets || []).map((set: any, sIdx: number) => (
-                                                        <View key={sIdx} style={[styles.setLogBadge, { backgroundColor: Colors.surfaceLight }]}>
+                                                        <View key={sIdx} style={[styles.setLogBadge, { backgroundColor: colors.surfaceLight }]}>
                                                             <Text style={styles.setLogText}>
-                                                                S{set.set_number}: <Text style={{ color: Colors.text, fontWeight: '700' }}>{set.reps}</Text> reps • <Text style={{ color: Colors.text, fontWeight: '700' }}>{set.weight}</Text>kg
+                                                                S{set.set_number}: <Text style={{ color: colors.text, fontWeight: '700' }}>{set.reps}</Text> reps • <Text style={{ color: colors.text, fontWeight: '700' }}>{set.weight}</Text>kg
                                                             </Text>
                                                         </View>
                                                     ))}
@@ -356,7 +359,7 @@ export default function PlanDetails() {
                                             </View>
                                         ))}
                                         {session.comments && (
-                                            <View style={[styles.sessionComment, { backgroundColor: Colors.surfaceLight }]}>
+                                            <View style={[styles.sessionComment, { backgroundColor: colors.surfaceLight }]}>
                                                 <Text style={styles.commentText}>"{session.comments}"</Text>
                                             </View>
                                         )}
@@ -377,13 +380,13 @@ export default function PlanDetails() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     topHeader: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         paddingTop: 80,
         paddingBottom: 25,
         paddingHorizontal: Spacing.md,
@@ -392,8 +395,10 @@ const styles = StyleSheet.create({
         elevation: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOpacity: mode === 'dark' ? 0.3 : 0.08,
         shadowRadius: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
     },
     headerBack: {
         marginLeft: 10,
@@ -408,14 +413,14 @@ const styles = StyleSheet.create({
         width: 60,
         height: 60,
         borderRadius: 20,
-        backgroundColor: 'rgba(204, 255, 0, 0.1)',
+        backgroundColor: colors.primary + '18',
         justifyContent: 'center',
         alignItems: 'center',
     },
     planTitleMain: {
         fontSize: 24,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         letterSpacing: -0.5,
     },
     clientRow: {
@@ -426,15 +431,17 @@ const styles = StyleSheet.create({
     },
     clientNameText: {
         fontSize: 15,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
     },
     planMetaGrid: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.03)' : colors.surfaceLight,
         borderRadius: 20,
         padding: 15,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     metaItem: {
         flex: 1,
@@ -442,7 +449,7 @@ const styles = StyleSheet.create({
     },
     metaLabel: {
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '700',
         textTransform: 'uppercase',
         letterSpacing: 1,
@@ -450,13 +457,13 @@ const styles = StyleSheet.create({
     },
     metaValue: {
         fontSize: 14,
-        color: '#fff',
+        color: colors.text,
         fontWeight: '800',
     },
     metaDivider: {
         width: 1,
         height: 20,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
     },
     scrollContent: {
         padding: Spacing.md,
@@ -465,17 +472,17 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '900',
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 20,
         marginLeft: 4,
     },
     daySection: {
         marginBottom: 16,
         borderRadius: 24,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     dayHeader: {
         flexDirection: 'row',
@@ -485,7 +492,7 @@ const styles = StyleSheet.create({
     },
     dayHeaderExpanded: {
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     dayTitleWrap: {
         flexDirection: 'row',
@@ -502,30 +509,30 @@ const styles = StyleSheet.create({
     dayNumberText: {
         fontSize: 14,
         fontWeight: '900',
-        color: Colors.primary,
+        color: colors.primary,
     },
     dayLabel: {
         fontSize: 16,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     dayMuscles: {
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
         marginTop: 2,
     },
     dayExercises: {
         padding: 15,
         gap: 12,
-        backgroundColor: 'rgba(255,255,255,0.01)',
+        backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.02)',
     },
     exerciseCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.03)' : colors.surface,
         borderRadius: 18,
         padding: 15,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
+        borderColor: colors.border,
     },
     exerciseHeader: {
         flexDirection: 'row',
@@ -536,18 +543,18 @@ const styles = StyleSheet.create({
         width: 34,
         height: 34,
         borderRadius: 10,
-        backgroundColor: 'rgba(204, 255, 0, 0.08)',
+        backgroundColor: colors.primary + '18',
         justifyContent: 'center',
         alignItems: 'center',
     },
     exerciseName: {
         fontSize: 15,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     exerciseMuscle: {
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
     },
     targetBadge: {
@@ -556,18 +563,18 @@ const styles = StyleSheet.create({
         gap: 4,
         paddingHorizontal: 10,
         paddingVertical: 5,
-        backgroundColor: 'rgba(255, 107, 0, 0.08)',
+        backgroundColor: (colors.accent || colors.primary) + '18',
         borderRadius: 8,
     },
     targetText: {
         fontSize: 12,
-        color: Colors.accent,
+        color: colors.accent || colors.primary,
         fontWeight: '800',
     },
     instructionText: {
         marginTop: 12,
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         lineHeight: 18,
         fontStyle: 'italic',
         paddingLeft: 4,
@@ -576,7 +583,7 @@ const styles = StyleSheet.create({
         marginTop: 15,
         paddingTop: 15,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.05)',
+        borderTopColor: colors.border,
     },
     historyLabelRow: {
         flexDirection: 'row',
@@ -587,7 +594,7 @@ const styles = StyleSheet.create({
     historyLabel: {
         fontSize: 11,
         fontWeight: '700',
-        color: Colors.primary,
+        color: colors.primary,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
@@ -607,7 +614,7 @@ const styles = StyleSheet.create({
     setNumber: {
         fontSize: 10,
         fontWeight: '900',
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     setMetrics: {
         flexDirection: 'row',
@@ -617,18 +624,18 @@ const styles = StyleSheet.create({
     metricValue: {
         fontSize: 13,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     metricLabel: {
         fontSize: 10,
         fontWeight: '600',
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     metricDivider: {
         width: 4,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
     },
     noHistoryBadge: {
         marginTop: 12,
@@ -638,7 +645,7 @@ const styles = StyleSheet.create({
     },
     noHistoryText: {
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
         fontStyle: 'italic',
     },
@@ -646,10 +653,10 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     sessionHistoryCard: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         overflow: 'hidden',
     },
     sessionHistoryHeader: {
@@ -671,11 +678,11 @@ const styles = StyleSheet.create({
     sessionLabel: {
         fontSize: 16,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
     },
     sessionDate: {
         fontSize: 12,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
         marginTop: 2,
     },
@@ -685,16 +692,16 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     exLogItem: {
-        backgroundColor: 'rgba(255,255,255,0.02)',
+        backgroundColor: colors.surfaceLight,
         padding: 12,
         borderRadius: 14,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
+        borderColor: colors.border,
     },
     exLogName: {
         fontSize: 14,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
         marginBottom: 8,
     },
     setLogsGrid: {
@@ -709,7 +716,7 @@ const styles = StyleSheet.create({
     },
     setLogText: {
         fontSize: 11,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
     },
     sessionComment: {
@@ -720,34 +727,34 @@ const styles = StyleSheet.create({
     },
     commentText: {
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontStyle: 'italic',
     },
     centered: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
         padding: 40,
     },
     loadingText: {
         marginTop: 15,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontWeight: '600',
     },
     errorText: {
-        color: Colors.textMuted,
+        color: colors.textMuted,
         fontSize: 16,
         marginBottom: 20,
     },
     backBtn: {
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: 30,
         paddingVertical: 12,
         borderRadius: 12,
     },
     backBtnText: {
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
         fontWeight: 'bold',
     },
 });

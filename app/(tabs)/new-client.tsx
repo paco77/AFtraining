@@ -4,32 +4,33 @@ import { showToast } from '@/services/toast';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import {
+    Activity,
     ArrowLeft,
     Camera,
     Check,
     Eye,
     EyeOff,
     Lock,
-    User,
-    Watch,
-    Activity,
     Plus,
-    Trash
+    Trash,
+    User,
+    Watch
 } from 'lucide-react-native';
-import React, { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import {
     ActivityIndicator,
     Alert,
     Image,
     KeyboardAvoidingView,
+    Linking,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
-    Linking
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,6 +38,8 @@ export default function NewClientScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { addClient, currentUser } = useUser();
+    const { colors, mode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, mode), [mode, colors]);
 
     // Personal Data
     const [name, setName] = useState('');
@@ -113,19 +116,19 @@ export default function NewClientScreen() {
             try {
                 await addClient(clientData as any, photos);
                 showToast.success('Cliente registrado correctamente');
-                
+
                 if (notifyWhatsApp) {
-                    const message = `¡Hola ${name}! Tu cuenta en la AppAF ha sido creada. Tu usuario es: ${username} y tu contraseña es: ${password}.`;
+                    const message = `¡Hola ${name}! Tu cuenta en App AFTraining ha sido creada. Tu usuario es: ${username} y tu contraseña es: ${password}.`;
                     const encodedMessage = encodeURIComponent(message);
-                    const url = phone 
+                    const url = phone
                         ? `whatsapp://send?phone=${phone}&text=${encodedMessage}`
                         : `whatsapp://send?text=${encodedMessage}`;
-                    
+
                     Linking.openURL(url).catch(() => {
                         Alert.alert('Error', 'No se pudo abrir WhatsApp');
                     });
                 }
-                
+
                 router.back();
             } catch (error: any) {
                 console.log('Error al registrar cliente:', error.response?.data || error.message);
@@ -230,7 +233,7 @@ export default function NewClientScreen() {
             </View>
 
             <ScrollView
-                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(styles.scroll.paddingBottom || 0, insets.bottom + 20) }]}
+                contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(Spacing.md, insets.bottom + 20) }]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
@@ -260,7 +263,7 @@ export default function NewClientScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Nombre Completo"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={name}
                         onChangeText={setName}
                     />
@@ -270,7 +273,7 @@ export default function NewClientScreen() {
                         placeholder="Correo Electrónico"
                         keyboardType="email-address"
                         autoCapitalize="none"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={email}
                         onChangeText={setEmail}
                     />
@@ -279,7 +282,7 @@ export default function NewClientScreen() {
                         style={styles.input}
                         placeholder="Teléfono Celular"
                         keyboardType="phone-pad"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={phone}
                         onChangeText={setPhone}
                     />
@@ -289,7 +292,7 @@ export default function NewClientScreen() {
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Edad"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={age}
                             onChangeText={setAge}
                         />
@@ -297,7 +300,7 @@ export default function NewClientScreen() {
                             style={[styles.input, { flex: 1, marginLeft: 8 }]}
                             placeholder="Peso (kg)"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={weight}
                             onChangeText={setWeight}
                         />
@@ -308,7 +311,7 @@ export default function NewClientScreen() {
                             style={[styles.input, { flex: 1, marginRight: 8 }]}
                             placeholder="Estatura (cm)"
                             keyboardType="decimal-pad"
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={height}
                             onChangeText={setHeight}
                         />
@@ -326,7 +329,7 @@ export default function NewClientScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Tiempo entrenando (ej: 6 meses)"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={trainingTime}
                         onChangeText={setTrainingTime}
                     />
@@ -334,7 +337,7 @@ export default function NewClientScreen() {
                     <TextInput
                         style={[styles.input, styles.textArea]}
                         placeholder="Objetivos (ej: Perder grasa, ganar músculo...)"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         multiline
                         numberOfLines={3}
                         value={objectives}
@@ -348,13 +351,13 @@ export default function NewClientScreen() {
                         <Activity size={18} color={Colors.primary} />
                         <Text style={styles.sectionTitle}>Biometría Avanzada</Text>
                     </View>
-                    
+
                     {dynamicMeasurements.map((meas, idx) => (
                         <View key={idx} style={styles.measurementRow}>
                             <TextInput
                                 style={[styles.input, styles.measurementNameInput]}
                                 placeholder="Nombre (ej. Pecho)"
-                                placeholderTextColor={Colors.textMuted}
+                                placeholderTextColor={colors.textMuted}
                                 value={meas.name}
                                 onChangeText={(val) => updateMeasurement(idx, 'name', val)}
                             />
@@ -362,19 +365,19 @@ export default function NewClientScreen() {
                                 style={[styles.input, styles.measurementValueInput]}
                                 placeholder="Valor"
                                 keyboardType="decimal-pad"
-                                placeholderTextColor={Colors.textMuted}
+                                placeholderTextColor={colors.textMuted}
                                 value={meas.value}
                                 onChangeText={(val) => updateMeasurement(idx, 'value', val)}
                             />
-                            <TouchableOpacity 
-                                style={styles.removeMeasBtn} 
+                            <TouchableOpacity
+                                style={styles.removeMeasBtn}
                                 onPress={() => handleRemoveMeasurement(idx)}
                             >
-                                <Trash size={20} color={Colors.error || '#ef4444'} />
+                                <Trash size={20} color={Colors.danger || '#ef4444'} />
                             </TouchableOpacity>
                         </View>
                     ))}
-                    
+
                     <TouchableOpacity style={styles.addMeasBtn} onPress={handleAddMeasurement}>
                         <Plus size={16} color={Colors.primary} />
                         <Text style={styles.addMeasBtnText}>Añadir medida</Text>
@@ -406,7 +409,7 @@ export default function NewClientScreen() {
                         style={styles.input}
                         placeholder="Nombre de Usuario"
                         autoCapitalize="none"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={colors.textMuted}
                         value={username}
                         onChangeText={setUsername}
                     />
@@ -416,7 +419,7 @@ export default function NewClientScreen() {
                             style={styles.passwordInput}
                             placeholder="Contraseña (8 caracteres)"
                             secureTextEntry={!showPassword}
-                            placeholderTextColor={Colors.textMuted}
+                            placeholderTextColor={colors.textMuted}
                             value={password}
                             onChangeText={setPassword}
                         />
@@ -441,10 +444,10 @@ export default function NewClientScreen() {
                     disabled={isSaving}
                 >
                     {isSaving ? (
-                        <ActivityIndicator color="#000" />
+                        <ActivityIndicator color={mode === 'dark' ? '#000' : '#FFF'} />
                     ) : (
                         <>
-                            <Check size={20} color="#000" />
+                            <Check size={20} color={mode === 'dark' ? '#000' : '#FFF'} />
                             <Text style={styles.submitBtnText}>Registrar Cliente</Text>
                         </>
                     )}
@@ -456,10 +459,10 @@ export default function NewClientScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, mode: 'dark' | 'light') => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -468,19 +471,19 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.md,
         paddingTop: Platform.OS === 'ios' ? 60 : 20,
         paddingBottom: 20,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backBtn: {
         padding: 8,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_container_low,
         borderRadius: 12,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: '800',
-        color: Colors.text,
+        color: colors.text,
         letterSpacing: -0.5,
     },
     scroll: {
@@ -488,11 +491,11 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: 28,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         padding: 20,
         borderRadius: 24,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -503,33 +506,33 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 15,
         fontWeight: '800',
-        color: Colors.primary,
+        color: colors.primary,
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
     input: {
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
         borderRadius: 16,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         paddingHorizontal: 16,
         paddingVertical: 14,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: 'transparent',
+        borderColor: colors.border,
     },
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
         borderRadius: 16,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: 'transparent',
+        borderColor: colors.border,
     },
     passwordInput: {
         flex: 1,
-        color: Colors.text,
+        color: colors.text,
         fontSize: 15,
         paddingHorizontal: 16,
         paddingVertical: 14,
@@ -558,16 +561,16 @@ const styles = StyleSheet.create({
     photoLabel: {
         fontSize: 11,
         fontWeight: '600',
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginBottom: 8,
     },
     photoBtn: {
         width: '100%',
         aspectRatio: 0.8,
-        backgroundColor: Colors.surfaceLight,
+        backgroundColor: mode === 'dark' ? colors.surfaceLight : colors.surface_lowest,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         borderStyle: 'dashed',
         justifyContent: 'center',
         alignItems: 'center',
@@ -575,7 +578,7 @@ const styles = StyleSheet.create({
     },
     photoBtnFilled: {
         borderStyle: 'solid',
-        borderColor: Colors.primary,
+        borderColor: colors.primary,
     },
     photoPlaceholder: {
         alignItems: 'center',
@@ -584,7 +587,7 @@ const styles = StyleSheet.create({
     photoPlaceholderText: {
         fontSize: 10,
         fontWeight: '500',
-        color: Colors.textMuted,
+        color: colors.textMuted,
     },
     previewImage: {
         width: '100%',
@@ -592,7 +595,7 @@ const styles = StyleSheet.create({
     },
     infoText: {
         fontSize: 13,
-        color: Colors.textMuted,
+        color: colors.textMuted,
         marginBottom: 16,
         lineHeight: 20,
     },
@@ -600,12 +603,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingVertical: 18,
         borderRadius: 20,
         gap: 10,
         marginTop: 10,
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -614,7 +617,7 @@ const styles = StyleSheet.create({
     submitBtnText: {
         fontWeight: '800',
         fontSize: 17,
-        color: '#000',
+        color: mode === 'dark' ? '#000' : '#FFF',
     },
     measurementRow: {
         flexDirection: 'row',
@@ -639,14 +642,14 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingVertical: 12,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         borderStyle: 'dashed',
         borderRadius: 16,
         gap: 8,
         marginTop: 4,
     },
     addMeasBtnText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '700',
         fontSize: 14,
     }

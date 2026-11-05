@@ -1,6 +1,7 @@
 import React from 'react';
 import { toast } from 'sonner-native';
 import { CustomToast } from '../components/CustomToast';
+import { ConfirmToast, ToastOption } from '../components/ConfirmToast';
 
 /**
  * Utility to show beautiful custom toasts matching the requested design
@@ -40,6 +41,19 @@ export const showToast = {
                 message={message}
                 onClose={() => toast.dismiss(id)}
             />
+        );
+    },
+    confirm: (title: string | undefined, message: string, options: ToastOption[]) => {
+        const id = toast.custom(
+            <ConfirmToast
+                title={title}
+                message={message}
+                options={options}
+                onClose={() => toast.dismiss(id)}
+            />,
+            {
+                duration: Infinity, // Prevent auto-close
+            }
         );
     }
 };
