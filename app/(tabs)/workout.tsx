@@ -62,20 +62,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── Header Session Duration Timer ──────────────────────────────────────────
+const MAX_SESSION_SECONDS = 3 * 3600; // 3 horas límite para el contador
+
 const GlobalWorkoutTimer = ({ sessionStartTime, durationRef }: { sessionStartTime: number | null, durationRef?: React.MutableRefObject<number> }) => {
     const [elapsed, setElapsed] = useState(0);
 
     useEffect(() => {
         if (!sessionStartTime) return;
+        let int: ReturnType<typeof setInterval> | null = null;
         const tick = () => {
             const now = Date.now();
-            const diff = Math.max(0, Math.floor((now - sessionStartTime) / 1000));
+            const rawDiff = Math.max(0, Math.floor((now - sessionStartTime) / 1000));
+            const diff = Math.min(MAX_SESSION_SECONDS, rawDiff);
             setElapsed(diff);
             if (durationRef) durationRef.current = diff;
+            if (rawDiff >= MAX_SESSION_SECONDS && int) {
+                clearInterval(int);
+                int = null;
+            }
         };
         tick();
-        const int = setInterval(tick, 1000);
-        return () => clearInterval(int);
+        const now = Date.now();
+        if (Math.floor((now - sessionStartTime) / 1000) < MAX_SESSION_SECONDS) {
+            int = setInterval(tick, 1000);
+        }
+        return () => {
+            if (int) clearInterval(int);
+        };
     }, [sessionStartTime, durationRef]);
 
     const { colors, mode } = useTheme();
@@ -83,15 +96,15 @@ const GlobalWorkoutTimer = ({ sessionStartTime, durationRef }: { sessionStartTim
 
     if (!sessionStartTime) return null;
 
-    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
-    const s = (elapsed % 60).toString().padStart(2, '0');
     const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
 
     return (
         <View style={workoutStyles.headerTimerBadge}>
             <Timer size={14} color={mode === 'dark' ? '#38BDF8' : colors.primary} style={{ marginRight: 5 }} />
             <Text style={workoutStyles.headerTimerText}>
-                {h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`}
+                {h > 0 ? `${h.toString().padStart(2, '0')}:${m}:${s}` : `${m}:${s}`}
             </Text>
         </View>
     );
@@ -539,7 +552,9 @@ export default function WorkoutScreen() {
             }));
 
             const startDate = sessionStartTime ? new Date(sessionStartTime) : new Date();
-            const durationMinutes = sessionStartTime ? Math.max(1, Math.floor((Date.now() - sessionStartTime) / 60000)) : undefined;
+            const durationMinutes = sessionStartTime 
+                ? Math.min(180, Math.max(1, Math.floor((Date.now() - sessionStartTime) / 60000))) 
+                : undefined;
 
             const dayLog = {
                 dayNumber: activeSessionDay,

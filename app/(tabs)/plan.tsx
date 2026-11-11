@@ -485,7 +485,9 @@ const PlanCard = ({
                                                                         </Text>
                                                                         {session.duration != null && (
                                                                             <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '700' }}>
-                                                                                • {session.duration} min
+                                                                                • {session.duration >= 60 
+                                                                                    ? `${Math.floor(session.duration / 60)}h${session.duration % 60 > 0 ? ` ${session.duration % 60}m` : ''}`
+                                                                                    : `${session.duration} min`}
                                                                             </Text>
                                                                         )}
                                                                     </View>

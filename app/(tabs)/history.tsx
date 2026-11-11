@@ -179,14 +179,23 @@ export default function HistoryScreen() {
     };
 
     const calculateDurationMock = (session: any) => {
-        if (session.duration_minutes != null) return `${session.duration_minutes} min`;
-        if (session.duration != null) return `${session.duration} min`;
-        if (session.end_time && session.start_time) {
+        let totalMins = 0;
+        if (session.duration_minutes != null) totalMins = Number(session.duration_minutes);
+        else if (session.duration != null) totalMins = Number(session.duration);
+        else if (session.end_time && session.start_time) {
              const diff = new Date(session.end_time).getTime() - new Date(session.start_time).getTime();
-             return `${Math.max(1, Math.round(diff / 60000))} min`;
+             totalMins = Math.max(1, Math.round(diff / 60000));
+        } else {
+             const logLen = session.exercise_logs?.length || 1;
+             totalMins = logLen * 12;
         }
-        const logLen = session.exercise_logs?.length || 1;
-        return `${logLen * 12} min`; 
+
+        if (totalMins >= 60) {
+            const h = Math.floor(totalMins / 60);
+            const m = totalMins % 60;
+            return m > 0 ? `${h} h ${m} min` : `${h} h`;
+        }
+        return `${totalMins} min`;
     };
 
     // Component: Session Card
